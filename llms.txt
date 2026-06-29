@@ -1,0 +1,119 @@
+# rasuvaeff/retry
+
+Closure-first retry with fixed/exponential backoff, jitter, time budgets, fake
+clock/sleeper/randomizer for tests, hooks, and a PSR-18 decorator that honors
+`Retry-After`.
+
+## Install
+
+```bash
+composer require rasuvaeff/retry
+```
+
+## Rules
+
+- Namespace: `Rasuvaeff\Retry`.
+- Use `FakeSleeper` and `FakeClock` in tests; never wait on real sleeps or
+  wall-clock time.
+- `Retry::run()` returns the closure value or throws `RetryExhausted`.
+  Non-retryable exceptions are rethrown as-is; only retryable failures that run
+  out of attempts or budget are wrapped.
+- Default retry triggers on any `\Exception`. `\Error` is NOT retried; opt in
+  with `retryOn(\Error::class)`. `retryOn()` REPLACES the class list (lets you
+  narrow the default); `retryIf()`/`stopIf()` layer extra predicates.
+- `retryIfResult(fn(mixed): bool)` retries when the operation returns an
+  unacceptable value (no throw needed). On exhaustion `RetryExhausted::lastException`
+  is an `UnacceptableResult` whose `$result` holds the rejected value.
+- `RetryExhausted` exposes `attempts`, `lastException`, `history`, and `reason`
+  (`ExhaustionReason::MaxAttempts` or `ExhaustionReason::TimeBudget`).
+- Each `AttemptRecord` in `history` carries `attempt`, `delayMs` (null on the
+  terminal record), `elapsedMs`, and `exception`.
+- This package has no Result dependency. Wrap `run()` with
+  `Result::fromThrowable()` (or equivalent) to get a typed result value instead
+  of an exception.
+- Named factories: `Retry::fixed()`, `Retry::exponential()`, `Retry::immediate()`.
+- Tune a builder with `withFixed()`, `withExponential()`, `withImmediate()`,
+  `withClock()`. No magic methods.
+- `stopAfterMs(int)` caps total wall-clock time: attempt 1 always runs, a
+  follow-up is skipped when `elapsed + nextDelay` would exceed the budget.
+- Clock uses PSR-20 (`Psr\Clock\ClockInterface`); no custom clock abstraction.
+- `Retry::onRetry` callbacks receive an `AttemptRecord`; `Retry::onExhausted`
+  callbacks receive the `RetryExhausted` exception (no positional args).
+- `jitter(float $factor, JitterMode $mode)` takes a `Jitter\JitterMode` enum
+  (`Additive`/`Full`/`None`), not a string; `factor` applies only to `Additive`.
+  `Additive` is equal jitter (spreads downward only), so `capMs` stays a hard
+  ceiling.
+- `Http\RetryingHttpClient`: `retryOnResponse`/`retryOnException` both receive
+  `RequestInterface` as the 2nd arg (gate on method/idempotency). Use
+  `Http\RetryDecisions` for ready-made predicates and
+  `RetryDecisions::onlyIdempotent($inner)` to retry only GET/HEAD/PUT/DELETE/
+  OPTIONS/TRACE. `respectRetryAfter` honors `Retry-After` capped by
+  `maxRetryAfterMs` (default 300000, null disables); `budgetMs` caps total time;
+  `retryOnException` filters transport exceptions (null = retry all);
+  `onRetry` callbacks take `Http\HttpAttemptRecord`, `onExhausted` callbacks take
+  `Http\HttpRetryExhausted` (carries `attempts` + `history`); `onExhausted` fires
+  on every exhaustion. With `throwOnExhausted: true` that same
+  `Http\HttpRetryExhausted` (implements `ClientExceptionInterface`) is thrown
+  instead of returning the last response.
+
+## API reference
+
+```php
+use Rasuvaeff\Retry\AttemptRecord;
+use Rasuvaeff\Retry\Clock\SystemClock;
+use Rasuvaeff\Retry\Jitter\JitterMode;
+use Rasuvaeff\Retry\Retry;
+
+$value = Retry::new()
+    ->maxAttempts(3)
+    ->withExponential(baseMs: 100, multiplier: 2.0, capMs: 30_000)
+    ->jitter(factor: 0.2, mode: JitterMode::Additive)
+    ->retryOn(RuntimeException::class)
+    ->retryIf(fn(Throwable $e): bool => $e->getCode() >= 500)
+    ->stopIf(fn(Throwable $e): bool => $e instanceof InvalidArgumentException)
+    ->retryIfResult(fn(mixed $r): bool => $r === null) // retry on a bad return value
+    ->stopAfterMs(budgetMs: 10_000)
+    ->withClock(new SystemClock())
+    ->onRetry(fn(AttemptRecord $record) => null)
+    ->run(fn(): string => flakyOperation());
+```
+
+Core types: `Retry`, `RetryPolicy`, `RetryPolicyInterface`, `RetryExhausted`,
+`ExhaustionReason`, `AttemptRecord`, `UnacceptableResult`.
+
+Backoff: `BackoffStrategy\BackoffStrategyInterface`, `FixedBackoff`,
+`ExponentialBackoff`, `ImmediateBackoff`.
+
+Jitter: `Jitter\JitterInterface`, `JitterMode` (enum), `FullJitter`,
+`AdditiveJitter`, `NoJitter`.
+
+Clock (PSR-20): `Clock\SystemClock`, `Clock\FakeClock` (mutable, `advanceMs()`).
+
+Testability: `Sleeper\SleeperInterface`, `SystemSleeper`, `FakeSleeper`,
+`Randomizer\RandomizerInterface`, `SystemRandomizer`, `FixedRandomizer`.
+
+HTTP: `Http\RetryingHttpClient` (PSR-18 decorator with `Retry-After` support),
+`Http\RetryDecisions` (ready-made predicates + `onlyIdempotent()`),
+`Http\HttpAttemptRecord`, `Http\HttpRetryExhausted`, `Http\RetryAfterParser`.
+
+```php
+use Rasuvaeff\Retry\Http\HttpAttemptRecord;
+use Rasuvaeff\Retry\Http\HttpRetryExhausted;
+use Rasuvaeff\Retry\Http\RetryDecisions;
+use Rasuvaeff\Retry\Http\RetryingHttpClient;
+use Rasuvaeff\Retry\RetryPolicy;
+
+$client = new RetryingHttpClient(
+    inner: $psr18Client,
+    policy: RetryPolicy::exponential(maxAttempts: 3, baseMs: 100),
+    retryOnResponse: RetryDecisions::onlyIdempotent(RetryDecisions::transient()),
+    respectRetryAfter: true,    // honor Retry-After header
+    maxRetryAfterMs: 300_000,   // cap server delay; null disables
+    budgetMs: null,             // total wall-clock budget; null disables
+    retryOnException: null,     // fn(ClientExceptionInterface, RequestInterface): bool; null = retry all
+    throwOnExhausted: false,    // true -> throw Http\HttpRetryExhausted with history
+    onRetry: [fn(HttpAttemptRecord $r): null => null],
+    onExhausted: [fn(HttpRetryExhausted $exhausted): null => null], // ->attempts, ->history
+    // clock defaults to Clock\SystemClock; pass Clock\FakeClock in tests
+);
+```
