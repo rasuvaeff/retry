@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Retry\Tests;
 
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\Retry\AttemptRecord;
 use Rasuvaeff\Retry\Clock\FakeClock;
 use Rasuvaeff\Retry\ExhaustionReason;
@@ -929,5 +932,66 @@ final class RetryTest
         }
 
         throw new \RuntimeException(message: 'Expected RetryExhausted');
+    }
+
+    #[Property(runs: 200)]
+    public function callCountNeverExceedsMaxAttempts(int $maxAttempts, int $failUntil): void
+    {
+        $calls = 0;
+
+        try {
+            Retry::immediate(maxAttempts: $maxAttempts)
+                ->withSleeper(sleeper: new FakeSleeper())
+                ->run(operation: function () use (&$calls, $failUntil): string {
+                    $calls++;
+                    if ($calls <= $failUntil) {
+                        throw new \RuntimeException(message: 'fail');
+                    }
+
+                    return 'ok';
+                });
+        } catch (RetryExhausted) {
+            // Expected when the operation keeps failing past maxAttempts.
+        }
+
+        Assert::true($calls <= $maxAttempts);
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    private function callCountNeverExceedsMaxAttemptsGenerators(): array
+    {
+        return [
+            'maxAttempts' => Gen::intBetween(1, 10),
+            'failUntil' => Gen::intBetween(0, 15),
+        ];
+    }
+
+    #[Property(runs: 200)]
+    public function callCountEqualsSucceedingAttempt(int $succeedOn, int $slack): void
+    {
+        $maxAttempts = $succeedOn + $slack;
+        $calls = 0;
+
+        Retry::immediate(maxAttempts: $maxAttempts)
+            ->withSleeper(sleeper: new FakeSleeper())
+            ->run(operation: function () use (&$calls, $succeedOn): string {
+                $calls++;
+                if ($calls < $succeedOn) {
+                    throw new \RuntimeException(message: 'fail');
+                }
+
+                return 'ok';
+            });
+
+        Assert::same($calls, $succeedOn);
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    private function callCountEqualsSucceedingAttemptGenerators(): array
+    {
+        return [
+            'succeedOn' => Gen::intBetween(1, 8),
+            'slack' => Gen::intBetween(0, 5),
+        ];
     }
 }
