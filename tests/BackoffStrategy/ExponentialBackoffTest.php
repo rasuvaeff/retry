@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Retry\Tests\BackoffStrategy;
 
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -106,5 +109,45 @@ final class ExponentialBackoffTest
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('Cap delay must be non-negative');
 
         new ExponentialBackoff(capMs: -1);
+    }
+
+    #[Property(runs: 400)]
+    public function delayAlwaysWithinZeroAndCap(int $baseMs, float $multiplier, int $capMs, int $attempt): void
+    {
+        $delay = (new ExponentialBackoff(baseMs: $baseMs, multiplier: $multiplier, capMs: $capMs))
+            ->delayMs(attempt: $attempt);
+
+        Assert::true($delay >= 0);
+        Assert::true($delay <= $capMs);
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    private function delayAlwaysWithinZeroAndCapGenerators(): array
+    {
+        return [
+            'baseMs' => Gen::intBetween(0, 10_000),
+            'multiplier' => Gen::floatBetween(1.0, 4.0),
+            'capMs' => Gen::intBetween(0, 60_000),
+            'attempt' => Gen::intBetween(1, 40),
+        ];
+    }
+
+    #[Property(runs: 400)]
+    public function delayIsNonDecreasingInAttempt(int $baseMs, float $multiplier, int $capMs, int $attempt): void
+    {
+        $backoff = new ExponentialBackoff(baseMs: $baseMs, multiplier: $multiplier, capMs: $capMs);
+
+        Assert::true($backoff->delayMs(attempt: $attempt) <= $backoff->delayMs(attempt: $attempt + 1));
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    private function delayIsNonDecreasingInAttemptGenerators(): array
+    {
+        return [
+            'baseMs' => Gen::intBetween(0, 10_000),
+            'multiplier' => Gen::floatBetween(1.0, 4.0),
+            'capMs' => Gen::intBetween(0, 60_000),
+            'attempt' => Gen::intBetween(1, 39),
+        ];
     }
 }

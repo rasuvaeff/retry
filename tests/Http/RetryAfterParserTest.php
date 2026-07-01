@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Retry\Tests\Http;
 
+use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Gen;
+use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\Retry\Clock\FakeClock;
 use Rasuvaeff\Retry\Http\RetryAfterParser;
 use Testo\Assert;
@@ -102,5 +105,19 @@ final class RetryAfterParserTest
         $delay = $parser->parseMs(headerValue: 'Sun, 01 Jun 2025 12:00:01 GMT');
 
         Assert::same($delay, 500);
+    }
+
+    #[Property(runs: 300)]
+    public function positiveDeltaSecondsBecomeMilliseconds(int $seconds): void
+    {
+        $parser = new RetryAfterParser(clock: new FakeClock());
+
+        Assert::same($parser->parseMs(headerValue: (string) $seconds), $seconds * 1000);
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    private function positiveDeltaSecondsBecomeMillisecondsGenerators(): array
+    {
+        return ['seconds' => Gen::intBetween(1, 1_000_000)];
     }
 }
