@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Retry\Tests;
 
+use Rasuvaeff\Duration\Duration;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\Property;
@@ -40,6 +41,113 @@ final class RetryTest
 
         Assert::same($value, 'ok');
         Assert::same($sleeper->delays(), []);
+    }
+
+    public function fixedForBuildsFixedDelayFromDuration(): void
+    {
+        $sleeper = new FakeSleeper();
+
+        try {
+            Retry::fixedFor(delay: Duration::millis(100), maxAttempts: 3)
+                ->withSleeper(sleeper: $sleeper)
+                ->run(operation: function (): string {
+                    throw new \RuntimeException(message: 'down');
+                });
+        } catch (RetryExhausted) {
+            Assert::same($sleeper->delays(), [100, 100]);
+
+            return;
+        }
+
+        throw new \RuntimeException(message: 'Expected RetryExhausted');
+    }
+
+    public function exponentialForBuildsExponentialDelaysFromDurations(): void
+    {
+        $sleeper = new FakeSleeper();
+
+        try {
+            Retry::exponentialFor(base: Duration::millis(100), cap: Duration::seconds(30), multiplier: 2.0, maxAttempts: 3)
+                ->withSleeper(sleeper: $sleeper)
+                ->run(operation: function (): string {
+                    throw new \RuntimeException(message: 'down');
+                });
+        } catch (RetryExhausted) {
+            Assert::same($sleeper->delays(), [100, 200]);
+
+            return;
+        }
+
+        throw new \RuntimeException(message: 'Expected RetryExhausted');
+    }
+
+    public function withFixedForBuildsFixedDelayFromDuration(): void
+    {
+        $sleeper = new FakeSleeper();
+
+        try {
+            Retry::new()
+                ->withFixedFor(delay: Duration::millis(50))
+                ->withSleeper(sleeper: $sleeper)
+                ->run(operation: function (): string {
+                    throw new \RuntimeException(message: 'down');
+                });
+        } catch (RetryExhausted) {
+            Assert::same($sleeper->delays(), [50, 50]);
+
+            return;
+        }
+
+        throw new \RuntimeException(message: 'Expected RetryExhausted');
+    }
+
+    public function withExponentialForBuildsExponentialDelaysFromDurations(): void
+    {
+        $sleeper = new FakeSleeper();
+
+        try {
+            Retry::new()
+                ->withExponentialFor(base: Duration::millis(100), cap: Duration::seconds(30))
+                ->withSleeper(sleeper: $sleeper)
+                ->run(operation: function (): string {
+                    throw new \RuntimeException(message: 'down');
+                });
+        } catch (RetryExhausted) {
+            Assert::same($sleeper->delays(), [100, 200]);
+
+            return;
+        }
+
+        throw new \RuntimeException(message: 'Expected RetryExhausted');
+    }
+
+    public function stopAfterAbortsBeforeNextAttemptWhenBudgetExhausted(): void
+    {
+        $clock = new FakeClock();
+        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $calls = 0;
+
+        try {
+            Retry::new()
+                ->maxAttempts(maxAttempts: 5)
+                ->withFixed(delayMs: 200)
+                ->stopAfter(budget: Duration::millis(300))
+                ->withClock(clock: $clock)
+                ->withSleeper(sleeper: $sleeper)
+                ->run(operation: function () use (&$calls): string {
+                    $calls++;
+
+                    throw new \RuntimeException(message: 'down');
+                });
+        } catch (RetryExhausted $exception) {
+            Assert::same($calls, 2);
+            Assert::same($exception->reason, ExhaustionReason::TimeBudget);
+            Assert::same($sleeper->delays(), [200]);
+
+            return;
+        }
+
+        throw new \RuntimeException(message: 'Expected RetryExhausted');
     }
 
     public function retriesUntilSuccess(): void

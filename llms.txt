@@ -27,7 +27,13 @@ composer require rasuvaeff/retry
 - `RetryExhausted` exposes `attempts`, `lastException`, `history`, and `reason`
   (`ExhaustionReason::MaxAttempts` or `ExhaustionReason::TimeBudget`).
 - Each `AttemptRecord` in `history` carries `attempt`, `delayMs` (null on the
-  terminal record), `elapsedMs`, and `exception`.
+  terminal record), `elapsedMs`, and `exception`; `delay(): ?Duration` and
+  `elapsed(): Duration` expose the same values as `rasuvaeff/duration` objects
+  (same on `Http\HttpAttemptRecord`).
+- Duration-typed counterparts of the `int`-ms API (additive, `int` API
+  unchanged): `Retry::fixedFor(Duration)`, `Retry::exponentialFor(Duration $base,
+  Duration $cap)`, `withFixedFor()`, `withExponentialFor()`, `stopAfter(Duration)`,
+  and `RetryPolicy::fixedFor()` / `RetryPolicy::exponentialFor()`.
 - This package has no Result dependency. Wrap `run()` with
   `Result::fromThrowable()` (or equivalent) to get a typed result value instead
   of an exception.

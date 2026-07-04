@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0 — 2026-07-04
+
+- Add optional `rasuvaeff/duration` integration. Purely additive: the existing
+  millisecond `int` API is unchanged and fully backwards-compatible.
+- Duration-typed factories alongside the `int`-ms ones: `Retry::fixedFor()`,
+  `Retry::exponentialFor()`, `Retry::withFixedFor()`,
+  `Retry::withExponentialFor()`, `Retry::stopAfter()`, plus
+  `RetryPolicy::fixedFor()` and `RetryPolicy::exponentialFor()`.
+- `AttemptRecord::delay(): ?Duration` and `AttemptRecord::elapsed(): Duration`
+  (and the same on `Http\HttpAttemptRecord`) expose the millisecond fields as
+  `Duration` value objects.
+
 ## 1.0.1 — 2026-06-30
 
 - Add `/benchmarks` and `/Makefile` to `.gitattributes` export-ignore.

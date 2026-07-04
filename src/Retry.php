@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Retry;
 
 use Psr\Clock\ClockInterface;
+use Rasuvaeff\Duration\Duration;
 use Rasuvaeff\Retry\BackoffStrategy\BackoffStrategyInterface;
 use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\FixedBackoff;
@@ -92,6 +93,27 @@ final readonly class Retry
         return self::new()->withImmediate(maxAttempts: $maxAttempts);
     }
 
+    /**
+     * Duration-typed counterpart of {@see self::fixed()}.
+     */
+    public static function fixedFor(Duration $delay, int $maxAttempts = 3): self
+    {
+        return self::new()->withFixedFor(delay: $delay, maxAttempts: $maxAttempts);
+    }
+
+    /**
+     * Duration-typed counterpart of {@see self::exponential()}.
+     */
+    public static function exponentialFor(Duration $base, Duration $cap, float $multiplier = 2.0, int $maxAttempts = 3): self
+    {
+        return self::new()->withExponentialFor(
+            base: $base,
+            cap: $cap,
+            multiplier: $multiplier,
+            maxAttempts: $maxAttempts,
+        );
+    }
+
     public function maxAttempts(int $maxAttempts): self
     {
         return $this->copy(maxAttempts: $maxAttempts);
@@ -104,6 +126,14 @@ final readonly class Retry
         }
 
         return $this->copy(budgetMs: $budgetMs);
+    }
+
+    /**
+     * Duration-typed counterpart of {@see self::stopAfterMs()}.
+     */
+    public function stopAfter(Duration $budget): self
+    {
+        return $this->stopAfterMs(budgetMs: $budget->toMillis());
     }
 
     public function withFixed(int $delayMs = 500, ?int $maxAttempts = null): self
@@ -127,6 +157,27 @@ final readonly class Retry
         return $this->copy(
             maxAttempts: $maxAttempts,
             backoff: new ImmediateBackoff(),
+        );
+    }
+
+    /**
+     * Duration-typed counterpart of {@see self::withFixed()}.
+     */
+    public function withFixedFor(Duration $delay, ?int $maxAttempts = null): self
+    {
+        return $this->withFixed(delayMs: $delay->toMillis(), maxAttempts: $maxAttempts);
+    }
+
+    /**
+     * Duration-typed counterpart of {@see self::withExponential()}.
+     */
+    public function withExponentialFor(Duration $base, Duration $cap, float $multiplier = 2.0, ?int $maxAttempts = null): self
+    {
+        return $this->withExponential(
+            baseMs: $base->toMillis(),
+            multiplier: $multiplier,
+            capMs: $cap->toMillis(),
+            maxAttempts: $maxAttempts,
         );
     }
 
