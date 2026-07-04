@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Retry\Tests;
 
+use Rasuvaeff\Duration\Duration;
 use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\FixedBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\ImmediateBackoff;
@@ -35,6 +36,24 @@ final class RetryPolicyTest
     public function exponentialPolicyExposesExponentialBackoff(): void
     {
         $policy = RetryPolicy::exponential(maxAttempts: 5, baseMs: 100, multiplier: 2.0, capMs: 30_000);
+
+        Assert::same($policy->maxAttempts(), 5);
+        Assert::instanceOf($policy->backoff(), ExponentialBackoff::class);
+        Assert::same($policy->backoff()->delayMs(attempt: 3), 400);
+    }
+
+    public function fixedForPolicyBuildsFixedBackoffFromDuration(): void
+    {
+        $policy = RetryPolicy::fixedFor(delay: Duration::millis(250), maxAttempts: 4);
+
+        Assert::same($policy->maxAttempts(), 4);
+        Assert::instanceOf($policy->backoff(), FixedBackoff::class);
+        Assert::same($policy->backoff()->delayMs(attempt: 1), 250);
+    }
+
+    public function exponentialForPolicyBuildsExponentialBackoffFromDurations(): void
+    {
+        $policy = RetryPolicy::exponentialFor(base: Duration::millis(100), cap: Duration::seconds(30), multiplier: 2.0, maxAttempts: 5);
 
         Assert::same($policy->maxAttempts(), 5);
         Assert::instanceOf($policy->backoff(), ExponentialBackoff::class);

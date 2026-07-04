@@ -20,6 +20,7 @@ a PSR-18 HTTP client decorator that honors `Retry-After`.
 - `psr/clock` ^1.0
 - `psr/http-client` ^1.0
 - `psr/http-message` ^1.0 || ^2.0
+- `rasuvaeff/duration` ^1.0
 
 ## Installation
 
@@ -63,6 +64,30 @@ Retry::new()->withClock(new SystemClock());
 
 Every factory and builder method is a real, statically analysable method — there
 are no magic `__call`/`__callStatic` aliases.
+
+### Duration
+
+Every millisecond `int` entry point has a `rasuvaeff/duration` counterpart, so
+you can express delays and budgets as type-safe `Duration` value objects instead
+of ambiguous integers. The `int`-ms API is unchanged; the Duration variants are
+purely additive.
+
+```php
+use Rasuvaeff\Duration\Duration;
+
+Retry::fixedFor(delay: Duration::seconds(1), maxAttempts: 3);
+Retry::exponentialFor(base: Duration::millis(100), cap: Duration::seconds(30));
+
+Retry::new()
+    ->withExponentialFor(base: Duration::millis(100), cap: Duration::seconds(30))
+    ->stopAfter(budget: Duration::seconds(10));
+
+RetryPolicy::fixedFor(delay: Duration::seconds(1));
+```
+
+`AttemptRecord` and `Http\HttpAttemptRecord` expose the same values on the way
+out: `delay(): ?Duration` (null on the terminal record) and
+`elapsed(): Duration`, alongside the existing `delayMs`/`elapsedMs` fields.
 
 By default a retry triggers on any `\Exception`. `\Error` (e.g. `\TypeError`,
 assertion failures) is **not** retried — opt in explicitly with

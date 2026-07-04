@@ -85,4 +85,43 @@ final class HttpAttemptRecordTest
             exception: new \RuntimeException(),
         );
     }
+
+    public function delayReturnsDurationForNonNullDelay(): void
+    {
+        $record = new HttpAttemptRecord(
+            attempt: 1,
+            delayMs: 500,
+            elapsedMs: 250,
+            response: new FakeResponse(statusCode: 200),
+            exception: null,
+        );
+
+        Assert::same($record->delay()?->toMillis(), 500);
+    }
+
+    public function delayReturnsNullForNullDelay(): void
+    {
+        $record = new HttpAttemptRecord(
+            attempt: 1,
+            delayMs: null,
+            elapsedMs: 250,
+            response: new FakeResponse(statusCode: 200),
+            exception: null,
+        );
+
+        Assert::null($record->delay());
+    }
+
+    public function elapsedReturnsDuration(): void
+    {
+        $record = new HttpAttemptRecord(
+            attempt: 1,
+            delayMs: 500,
+            elapsedMs: 250,
+            response: new FakeResponse(statusCode: 200),
+            exception: null,
+        );
+
+        Assert::same($record->elapsed()->toMillis(), 250);
+    }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Retry;
 
+use Rasuvaeff\Duration\Duration;
 use Rasuvaeff\Retry\BackoffStrategy\BackoffStrategyInterface;
 use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\FixedBackoff;
@@ -62,6 +63,27 @@ final readonly class RetryPolicy implements RetryPolicyInterface
             jitter: new NoJitter(),
             sleeper: new SystemSleeper(),
             randomizer: new SystemRandomizer(),
+        );
+    }
+
+    /**
+     * Duration-typed counterpart of {@see self::fixed()}.
+     */
+    public static function fixedFor(Duration $delay, int $maxAttempts = 3): self
+    {
+        return self::fixed(delayMs: $delay->toMillis(), maxAttempts: $maxAttempts);
+    }
+
+    /**
+     * Duration-typed counterpart of {@see self::exponential()}.
+     */
+    public static function exponentialFor(Duration $base, Duration $cap, float $multiplier = 2.0, int $maxAttempts = 3): self
+    {
+        return self::exponential(
+            maxAttempts: $maxAttempts,
+            baseMs: $base->toMillis(),
+            multiplier: $multiplier,
+            capMs: $cap->toMillis(),
         );
     }
 

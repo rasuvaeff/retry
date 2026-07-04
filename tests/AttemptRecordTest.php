@@ -48,4 +48,25 @@ final class AttemptRecordTest
 
         new AttemptRecord(attempt: 1, delayMs: 0, elapsedMs: -1, exception: new \RuntimeException());
     }
+
+    public function delayReturnsDurationForNonNullDelay(): void
+    {
+        $record = new AttemptRecord(attempt: 1, delayMs: 500, elapsedMs: 250, exception: new \RuntimeException());
+
+        Assert::same($record->delay()?->toMillis(), 500);
+    }
+
+    public function delayReturnsNullForNullDelay(): void
+    {
+        $record = new AttemptRecord(attempt: 1, delayMs: null, elapsedMs: 250, exception: new \RuntimeException());
+
+        Assert::null($record->delay());
+    }
+
+    public function elapsedReturnsDuration(): void
+    {
+        $record = new AttemptRecord(attempt: 1, delayMs: 500, elapsedMs: 250, exception: new \RuntimeException());
+
+        Assert::same($record->elapsed()->toMillis(), 250);
+    }
 }
