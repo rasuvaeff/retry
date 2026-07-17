@@ -7,6 +7,7 @@
 [![Psalm level](https://img.shields.io/badge/psalm-level_1-blue.svg)](https://github.com/rasuvaeff/retry/actions/workflows/static-analysis.yml)
 [![PHP](https://img.shields.io/packagist/dependency-v/rasuvaeff/retry/php)](https://packagist.org/packages/rasuvaeff/retry)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE.md)
+[Русская версия](README.ru.md)
 
 Closure-first retry with fixed/exponential backoff, full/additive jitter, time
 budgets, testable clock/sleeper/randomizer interfaces, observability hooks, and
