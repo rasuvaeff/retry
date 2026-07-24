@@ -122,7 +122,7 @@ final class ExponentialBackoffTest
     }
 
     /** @return array<string, ArbitraryInterface> */
-    private function delayAlwaysWithinZeroAndCapGenerators(): array
+    public static function delayAlwaysWithinZeroAndCapGenerators(): array
     {
         return [
             'baseMs' => Gen::intBetween(0, 10_000),
@@ -141,7 +141,7 @@ final class ExponentialBackoffTest
     }
 
     /** @return array<string, ArbitraryInterface> */
-    private function delayIsNonDecreasingInAttemptGenerators(): array
+    public static function delayIsNonDecreasingInAttemptGenerators(): array
     {
         return [
             'baseMs' => Gen::intBetween(0, 10_000),

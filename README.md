@@ -14,6 +14,7 @@ budgets, testable clock/sleeper/randomizer interfaces, observability hooks, and
 a PSR-18 HTTP client decorator that honors `Retry-After`.
 
 > Using an AI coding assistant? [llms.txt](llms.txt) contains a compact API reference you can share with the model.
+> Projects using the [llm/skills](https://github.com/roxblnfk/skills) Composer plugin also get this package's agent skill synced into `.agents/skills/` automatically on install.
 
 ## Requirements
 
