@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 — 2026-07-25
+
+- Ship an AI agent skill (`resources/skills/rasuvaeff-retry/SKILL.md` +
+  `extra.skills` in composer.json): projects using the `llm/skills` Composer
+  plugin get the skill synced into `.agents/skills/` automatically on install.
+- Bump dev dependency `rasuvaeff/property-testing` from `^1.0` to `^2.6`.
+- Make property-testing generator methods `public static` (a `private`
+  generator is only reachable via reflection and gets removed by rector's
+  `RemoveUnusedPrivateMethodRector`).
+
 ## 1.1.0 — 2026-07-04
 
 - Add optional `rasuvaeff/duration` integration. Purely additive: the existing

@@ -116,7 +116,7 @@ final class RetryAfterParserTest
     }
 
     /** @return array<string, ArbitraryInterface> */
-    private function positiveDeltaSecondsBecomeMillisecondsGenerators(): array
+    public static function positiveDeltaSecondsBecomeMillisecondsGenerators(): array
     {
         return ['seconds' => Gen::intBetween(1, 1_000_000)];
     }

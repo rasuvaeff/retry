@@ -1066,7 +1066,7 @@ final class RetryTest
     }
 
     /** @return array<string, ArbitraryInterface> */
-    private function callCountNeverExceedsMaxAttemptsGenerators(): array
+    public static function callCountNeverExceedsMaxAttemptsGenerators(): array
     {
         return [
             'maxAttempts' => Gen::intBetween(1, 10),
@@ -1095,7 +1095,7 @@ final class RetryTest
     }
 
     /** @return array<string, ArbitraryInterface> */
-    private function callCountEqualsSucceedingAttemptGenerators(): array
+    public static function callCountEqualsSucceedingAttemptGenerators(): array
     {
         return [
             'succeedOn' => Gen::intBetween(1, 8),
