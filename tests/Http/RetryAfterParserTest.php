@@ -45,6 +45,13 @@ final class RetryAfterParserTest
         Assert::null($parser->parseMs(headerValue: '0'));
     }
 
+    public function rejectsIntegerWithTrailingNewline(): void
+    {
+        $parser = new RetryAfterParser(clock: new FakeClock());
+
+        Assert::null($parser->parseMs(headerValue: "120\n"));
+    }
+
     public function parsesHttpDateInTheFuture(): void
     {
         $now = new \DateTimeImmutable('2025-06-01T12:00:00+00:00');

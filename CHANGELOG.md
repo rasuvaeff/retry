@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1 — 2026-07-25
+
+- Reject trailing newlines in `Retry-After` delta-seconds parsing: anchor the
+  digit pattern in `RetryAfterParser` with `\z` instead of `$` (PCRE `$`
+  matches before a trailing `\n`, which let `"120\n"` parse as 120s instead of
+  falling through to HTTP-date parsing). Hygiene fix: the surrounding `(int)`
+  cast masked the smuggling for delta-seconds, but the trailing newline still
+  produced a different parse path than a clean value.
+
 ## 1.2.0 — 2026-07-25
 
 - Ship an AI agent skill (`resources/skills/rasuvaeff-retry/SKILL.md` +
