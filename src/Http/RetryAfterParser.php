@@ -34,7 +34,7 @@ final readonly class RetryAfterParser
             return null;
         }
 
-        if (preg_match('/^\d+$/', $headerValue) === 1) {
+        if (preg_match('/^\d+\z/', $headerValue) === 1) {
             $seconds = (int) $headerValue;
             if ($seconds === 0) {
                 return null;
