@@ -8,11 +8,17 @@
         "summary": "build/infection-summary.log"
     },
     "testFramework": "testo",
-    // Honest ceiling: every killable mutant is killed. The ~10 survivors are
+    // Honest ceiling: every killable mutant is killed. The ~11 survivors are
     // genuine equivalents — psalm-required explicit (float) casts in backoff/
     // jitter, and (int) casts on the sub-millisecond correction term of the
     // elapsed-ms math (the only deterministic test clock advances in whole
-    // milliseconds, so the microsecond term coerces identically). No ignores.
+    // milliseconds, so the microsecond term coerces identically). Plus two
+    // non-equivalent-but-unkillable survivors: SystemSleeper::sleepMs's
+    // `$ms * 1000` → `* 999`/`* 1001` (IncrementInteger/DecrementInteger,
+    // Sleeper/SystemSleeper.php:19) — a 0.1% perturbation of the requested
+    // wait, below any timing tolerance that stays non-flaky against OS
+    // scheduler jitter. Killing them would need a src/ seam (an injectable
+    // sleep function), out of scope here. No ignores.
     "minMsi": 95,
     "mutators": {
         "@default": true
