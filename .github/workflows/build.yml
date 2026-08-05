@@ -156,6 +156,8 @@ jobs:
         run: composer install --no-interaction --no-progress --prefer-dist
 
       - name: Test with coverage
+        env:
+          PROPERTY_DB: ${{ github.workspace }}/build/property-db
         run: composer test:coverage:ci
 
       - name: Mutation testing
