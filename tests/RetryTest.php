@@ -1050,8 +1050,17 @@ final class RetryTest
         try {
             Retry::immediate(maxAttempts: $maxAttempts)
                 ->withSleeper(sleeper: new FakeSleeper())
-                ->run(operation: function () use (&$calls, $failUntil): string {
+                ->run(operation: function () use (&$calls, $failUntil, $maxAttempts): string {
                     $calls++;
+
+                    // \Error is outside the default retryOn list, so it escapes
+                    // the loop instead of being retried: timeoutMs cannot
+                    // interrupt a body that never returns, and a retry loop that
+                    // stopped counting attempts would otherwise spin forever.
+                    if ($calls > $maxAttempts) {
+                        throw new \Error(message: 'Operation called past maxAttempts');
+                    }
+
                     if ($calls <= $failUntil) {
                         throw new \RuntimeException(message: 'fail');
                     }
@@ -1082,8 +1091,13 @@ final class RetryTest
 
         Retry::immediate(maxAttempts: $maxAttempts)
             ->withSleeper(sleeper: new FakeSleeper())
-            ->run(operation: function () use (&$calls, $succeedOn): string {
+            ->run(operation: function () use (&$calls, $succeedOn, $maxAttempts): string {
                 $calls++;
+
+                if ($calls > $maxAttempts) {
+                    throw new \Error(message: 'Operation called past maxAttempts');
+                }
+
                 if ($calls < $succeedOn) {
                     throw new \RuntimeException(message: 'fail');
                 }
