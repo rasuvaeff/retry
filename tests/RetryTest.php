@@ -1042,7 +1042,7 @@ final class RetryTest
         throw new \RuntimeException(message: 'Expected RetryExhausted');
     }
 
-    #[Property(runs: 200)]
+    #[Property(runs: 200, timeoutMs: 1000)]
     public function callCountNeverExceedsMaxAttempts(int $maxAttempts, int $failUntil): void
     {
         $calls = 0;
@@ -1074,7 +1074,7 @@ final class RetryTest
         ];
     }
 
-    #[Property(runs: 200)]
+    #[Property(runs: 200, timeoutMs: 1000)]
     public function callCountEqualsSucceedingAttempt(int $succeedOn, int $slack): void
     {
         $maxAttempts = $succeedOn + $slack;
