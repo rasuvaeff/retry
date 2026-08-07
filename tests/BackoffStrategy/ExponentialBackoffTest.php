@@ -111,7 +111,7 @@ final class ExponentialBackoffTest
         new ExponentialBackoff(capMs: -1);
     }
 
-    #[Property(runs: 400)]
+    #[Property(runs: 400, timeoutMs: 1000)]
     public function delayAlwaysWithinZeroAndCap(int $baseMs, float $multiplier, int $capMs, int $attempt): void
     {
         $delay = (new ExponentialBackoff(baseMs: $baseMs, multiplier: $multiplier, capMs: $capMs))
@@ -132,7 +132,7 @@ final class ExponentialBackoffTest
         ];
     }
 
-    #[Property(runs: 400)]
+    #[Property(runs: 400, timeoutMs: 1000)]
     public function delayIsNonDecreasingInAttempt(int $baseMs, float $multiplier, int $capMs, int $attempt): void
     {
         $backoff = new ExponentialBackoff(baseMs: $baseMs, multiplier: $multiplier, capMs: $capMs);

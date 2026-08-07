@@ -1042,7 +1042,7 @@ final class RetryTest
         throw new \RuntimeException(message: 'Expected RetryExhausted');
     }
 
-    #[Property(runs: 200)]
+    #[Property(runs: 200, timeoutMs: 1000)]
     public function callCountNeverExceedsMaxAttempts(int $maxAttempts, int $failUntil): void
     {
         $calls = 0;
@@ -1050,8 +1050,17 @@ final class RetryTest
         try {
             Retry::immediate(maxAttempts: $maxAttempts)
                 ->withSleeper(sleeper: new FakeSleeper())
-                ->run(operation: function () use (&$calls, $failUntil): string {
+                ->run(operation: function () use (&$calls, $failUntil, $maxAttempts): string {
                     $calls++;
+
+                    // \Error is outside the default retryOn list, so it escapes
+                    // the loop instead of being retried: timeoutMs cannot
+                    // interrupt a body that never returns, and a retry loop that
+                    // stopped counting attempts would otherwise spin forever.
+                    if ($calls > $maxAttempts) {
+                        throw new \Error(message: 'Operation called past maxAttempts');
+                    }
+
                     if ($calls <= $failUntil) {
                         throw new \RuntimeException(message: 'fail');
                     }
@@ -1074,7 +1083,7 @@ final class RetryTest
         ];
     }
 
-    #[Property(runs: 200)]
+    #[Property(runs: 200, timeoutMs: 1000)]
     public function callCountEqualsSucceedingAttempt(int $succeedOn, int $slack): void
     {
         $maxAttempts = $succeedOn + $slack;
@@ -1082,8 +1091,13 @@ final class RetryTest
 
         Retry::immediate(maxAttempts: $maxAttempts)
             ->withSleeper(sleeper: new FakeSleeper())
-            ->run(operation: function () use (&$calls, $succeedOn): string {
+            ->run(operation: function () use (&$calls, $succeedOn, $maxAttempts): string {
                 $calls++;
+
+                if ($calls > $maxAttempts) {
+                    throw new \Error(message: 'Operation called past maxAttempts');
+                }
+
                 if ($calls < $succeedOn) {
                     throw new \RuntimeException(message: 'fail');
                 }
