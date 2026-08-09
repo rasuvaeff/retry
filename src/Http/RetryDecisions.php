@@ -30,7 +30,7 @@ final readonly class RetryDecisions
         return static fn(ResponseInterface $response, RequestInterface $request): bool => in_array(
             strtoupper($request->getMethod()),
             self::IDEMPOTENT_METHODS,
-            true,
+            strict: true,
         ) && $inner($response);
     }
 
@@ -67,7 +67,7 @@ final readonly class RetryDecisions
         return static fn(ResponseInterface $response): bool => in_array(
             $response->getStatusCode(),
             [408, 425, 429, 500, 502, 503, 504],
-            true,
+            strict: true,
         );
     }
 }

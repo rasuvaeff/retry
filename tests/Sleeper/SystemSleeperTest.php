@@ -24,11 +24,11 @@ final class SystemSleeperTest
     public function actuallySleepsForRequestedDuration(): void
     {
         $sleeper = new SystemSleeper();
-        $start = hrtime(true);
+        $start = hrtime(as_number: true);
 
         $sleeper->sleepMs(ms: 30);
 
-        $elapsedMs = (hrtime(true) - $start) / 1_000_000;
+        $elapsedMs = (hrtime(as_number: true) - $start) / 1_000_000;
 
         Assert::true($elapsedMs >= 20.0);
         Assert::true($elapsedMs <= 1_000.0);
@@ -37,11 +37,11 @@ final class SystemSleeperTest
     public function acceptsZeroDelayWithoutBlocking(): void
     {
         $sleeper = new SystemSleeper();
-        $start = hrtime(true);
+        $start = hrtime(as_number: true);
 
         $sleeper->sleepMs(ms: 0);
 
-        $elapsedMs = (hrtime(true) - $start) / 1_000_000;
+        $elapsedMs = (hrtime(as_number: true) - $start) / 1_000_000;
 
         Assert::true($elapsedMs < 100.0);
     }
