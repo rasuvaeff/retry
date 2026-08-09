@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Migrate the property-based test suite from the frozen `rasuvaeff/property-testing` 2.x to the new `rasuvaeff/property-testing-testo` adapter (drop-in, no PHP code changes; same `#[Property]` attribute and `Gen` API).
+- Adopt `rasuvaeff/rector-named-literals` and apply the named-argument rule to literal calls.
+
 ## 1.2.1 — 2026-07-25
 
 - Reject trailing newlines in `Retry-After` delta-seconds parsing: anchor the
