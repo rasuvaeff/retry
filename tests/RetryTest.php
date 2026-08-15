@@ -6,9 +6,12 @@ namespace Rasuvaeff\Retry\Tests;
 
 use Rasuvaeff\Duration\Duration;
 use Rasuvaeff\PropertyTesting\ArbitraryInterface;
+use Rasuvaeff\PropertyTesting\Classify;
 use Rasuvaeff\PropertyTesting\Gen;
 use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\Retry\AttemptRecord;
+use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
+use Rasuvaeff\Retry\BackoffStrategy\FixedBackoff;
 use Rasuvaeff\Retry\Clock\FakeClock;
 use Rasuvaeff\Retry\ExhaustionReason;
 use Rasuvaeff\Retry\Jitter\JitterMode;
@@ -1071,7 +1074,92 @@ final class RetryTest
             // Expected when the operation keeps failing past maxAttempts.
         }
 
+        // maxAttempts is 1-10 and failUntil 0-15, so exhaustion is about
+        // two thirds of draws and success about a third; both floors sit
+        // under half their share.
+        Classify::cover($failUntil >= $maxAttempts, 'exhausted every attempt', 25.0);
+        Classify::cover($failUntil < $maxAttempts, 'succeeded before the cap', 15.0);
+
         Assert::true($calls <= $maxAttempts);
+    }
+
+    /** @return iterable<string, array{int, int}> */
+    public static function callCountNeverExceedsMaxAttemptsExamples(): iterable
+    {
+        yield 'a single attempt that succeeds' => [1, 0];
+        yield 'a single attempt that fails' => [1, 1];
+        yield 'succeeds on the last allowed attempt' => [3, 2];
+        yield 'fails on the last allowed attempt' => [3, 3];
+    }
+
+    #[Property(runs: 300)]
+    public function exponentialDelayNeverLeavesItsBoundsAndNeverDecreases(
+        int $baseMs,
+        int $capMs,
+        int $attempt,
+        int $step,
+    ): void {
+        $backoff = new ExponentialBackoff(baseMs: $baseMs, multiplier: 2.0, capMs: $capMs);
+
+        $delay = $backoff->delayMs($attempt);
+        $later = $backoff->delayMs($attempt + $step);
+
+        // The cap is the reason a caller can bound a retry budget at all, and
+        // the monotonicity is what makes exponential backoff back off.
+        Classify::cover($delay >= $capMs, 'already at the cap', 20.0);
+        Classify::cover($delay < $capMs, 'still climbing', 20.0);
+        Classify::when($step === 0, 'the same attempt twice');
+
+        Assert::true($delay >= 0 && $delay <= $capMs);
+        Assert::true($later >= $delay);
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    public static function exponentialDelayNeverLeavesItsBoundsAndNeverDecreasesGenerators(): array
+    {
+        // Attempts reach far enough past the cap that both regimes occur: with
+        // a base of up to 10s doubling each time, everything beyond attempt 12
+        // is capped whatever the base.
+        return [
+            'baseMs' => Gen::intBetween(0, 10_000),
+            'capMs' => Gen::intBetween(0, 60_000),
+            'attempt' => Gen::intBetween(1, 20),
+            'step' => Gen::intBetween(0, 5),
+        ];
+    }
+
+    /** @return iterable<string, array{int, int, int, int}> */
+    public static function exponentialDelayNeverLeavesItsBoundsAndNeverDecreasesExamples(): iterable
+    {
+        // A zero base and a zero cap are both legal and both make every delay
+        // zero — the degenerate cases a bounds check most often forgets.
+        yield 'zero base' => [0, 30_000, 1, 1];
+        yield 'zero cap' => [100, 0, 1, 1];
+        yield 'the first attempt is the base' => [100, 30_000, 1, 0];
+        yield 'far past the cap' => [100, 1_000, 20, 5];
+    }
+
+    #[Property(runs: 200)]
+    public function aFixedBackoffIsTheSameDelayAtEveryAttempt(int $delayMs, int $attempt, int $other): void
+    {
+        $backoff = new FixedBackoff(delayMs: $delayMs);
+
+        Classify::when($attempt === $other, 'the same attempt twice');
+
+        // "Fixed" is a contract, not an implementation detail: a caller sizing
+        // a retry budget multiplies this by maxAttempts.
+        Assert::same($backoff->delayMs($attempt), $delayMs);
+        Assert::same($backoff->delayMs($other), $backoff->delayMs($attempt));
+    }
+
+    /** @return array<string, ArbitraryInterface> */
+    public static function aFixedBackoffIsTheSameDelayAtEveryAttemptGenerators(): array
+    {
+        return [
+            'delayMs' => Gen::intBetween(0, 60_000),
+            'attempt' => Gen::intBetween(1, 50),
+            'other' => Gen::intBetween(1, 50),
+        ];
     }
 
     /** @return array<string, ArbitraryInterface> */
