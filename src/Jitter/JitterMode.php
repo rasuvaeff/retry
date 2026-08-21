@@ -11,7 +11,7 @@ namespace Rasuvaeff\Retry\Jitter;
  */
 enum JitterMode
 {
-    /** Symmetric factor around the backoff delay. Requires a factor in (0, 1]. */
+    /** One-sided: spreads the delay downward only, in [(1-factor)*delay, delay]. Requires a factor in [0, 1]. */
     case Additive;
 
     /** Random delay between zero and the computed backoff delay. */
