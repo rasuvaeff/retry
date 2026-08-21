@@ -60,7 +60,11 @@ composer require rasuvaeff/retry
   `Http\HttpRetryExhausted` (carries `attempts` + `history`); `onExhausted` fires
   on every exhaustion. With `throwOnExhausted: true` that same
   `Http\HttpRetryExhausted` (implements `ClientExceptionInterface`) is thrown
-  instead of returning the last response.
+  instead of returning the last response. A seekable request body is rewound
+  before every re-send (PSR-7 streams are stateful); requests with a
+  non-seekable body are NOT safely retryable — the body cannot be replayed.
+  Unusable `Retry-After` values (oversized delta-seconds, dates that don't
+  round-trip IMF-fixdate exactly) are ignored and fall back to backoff.
 
 ## API reference
 

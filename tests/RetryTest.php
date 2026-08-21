@@ -124,6 +124,50 @@ final class RetryTest
         throw new \RuntimeException(message: 'Expected RetryExhausted');
     }
 
+    /**
+     * A backwards clock step (NTP correction) between the run's start and a
+     * failure must not make the retry machinery itself throw: a negative
+     * elapsed would blow up AttemptRecord's constructor from inside the catch
+     * block, losing the operation's own exception entirely.
+     */
+    public function backwardsClockStepDoesNotBreakTheRetryLoop(): void
+    {
+        $clock = new class implements \Psr\Clock\ClockInterface {
+            private int $calls = 0;
+
+            #[\Override]
+            public function now(): \DateTimeImmutable
+            {
+                // Second and later reads are 10s BEFORE the first one.
+                return 0 === $this->calls++
+                    ? new \DateTimeImmutable('2025-01-01T00:00:10+00:00')
+                    : new \DateTimeImmutable('2025-01-01T00:00:00+00:00');
+            }
+        };
+        $records = [];
+        $calls = 0;
+
+        $result = Retry::new()
+            ->maxAttempts(maxAttempts: 2)
+            ->withFixed(delayMs: 1)
+            ->withClock(clock: $clock)
+            ->withSleeper(sleeper: new FakeSleeper())
+            ->onRetry(callback: static function (AttemptRecord $record) use (&$records): void {
+                $records[] = $record;
+            })
+            ->run(operation: function () use (&$calls): string {
+                if (1 === ++$calls) {
+                    throw new \RuntimeException(message: 'transient');
+                }
+
+                return 'ok';
+            });
+
+        Assert::same($result, 'ok');
+        Assert::same($calls, 2);
+        Assert::same($records[0]->elapsedMs, 0);
+    }
+
     public function stopAfterAbortsBeforeNextAttemptWhenBudgetExhausted(): void
     {
         $clock = new FakeClock();

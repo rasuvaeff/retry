@@ -229,10 +229,20 @@ A single attempt budget covers both retryable responses and PSR-18 transport
 exceptions, so the inner client is called at most `maxAttempts` times. When a
 retryable response carries a valid `Retry-After` header, that delay replaces the
 configured backoff (delta-seconds or IMF-fixdate; the obsolete RFC 850 and
-asctime date forms are ignored). The server delay carries no jitter and is capped
+asctime date forms are ignored, as are delta-seconds too large to be a usable
+delay and dates that don't round-trip the IMF-fixdate format exactly — all fall
+back to the configured backoff). The server delay carries no jitter and is capped
 by `maxRetryAfterMs`. Transport exceptions always fall back to backoff (no
 `Retry-After` is available). Pass `respectRetryAfter: false` to disable header
 handling.
+
+Before every re-send the request body is rewound if it is seekable — PSR-7
+stream bodies are stateful, and without the rewind attempt 2+ of a POST would
+silently transmit an empty body. **Requests with non-seekable bodies are not
+safely retryable**: the body cannot be replayed, so a retried send transmits
+whatever remains of the stream (usually nothing). Use a seekable body or
+restrict retries to idempotent/bodyless requests via `retryOnResponse` /
+`RetryDecisions::onlyIdempotent()`.
 
 `Http\HttpRetryExhausted` implements `Psr\Http\Client\ClientExceptionInterface`,
 so it stays within the PSR-18 contract — code that catches `ClientExceptionInterface`

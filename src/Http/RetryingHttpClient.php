@@ -71,6 +71,19 @@ final readonly class RetryingHttpClient implements ClientInterface
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             $isLastAttempt = $attempt >= $maxAttempts;
 
+            // PSR-7 stream bodies are stateful: after attempt 1 the inner
+            // client has read the stream to EOF, and a re-send would silently
+            // transmit an empty body (whether it does depends on the client's
+            // internals - the worst kind of selective). Rewind before every
+            // retry; a non-seekable body cannot be replayed and is documented
+            // as not safely retryable.
+            if ($attempt > 1) {
+                $body = $request->getBody();
+                if ($body->isSeekable()) {
+                    $body->rewind();
+                }
+            }
+
             try {
                 $response = $this->inner->sendRequest(request: $request);
 
@@ -184,8 +197,15 @@ final readonly class RetryingHttpClient implements ClientInterface
     {
         $now = $this->clock->now();
 
-        return ($now->getTimestamp() - $startedAt->getTimestamp()) * 1000
-            + (int) (((int) $now->format('u') - (int) $startedAt->format('u')) / 1000);
+        // Clamped at zero - see Retry::elapsedMs(): a backwards clock step
+        // must not make HttpAttemptRecord's constructor throw mid-retry
+        // (which would also escape the PSR-18 ClientExceptionInterface
+        // contract).
+        return max(
+            0,
+            ($now->getTimestamp() - $startedAt->getTimestamp()) * 1000
+                + (int) (((int) $now->format('u') - (int) $startedAt->format('u')) / 1000),
+        );
     }
 
     private function callExhausted(HttpRetryExhausted $exhausted): void

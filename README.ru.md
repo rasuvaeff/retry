@@ -233,10 +233,20 @@ retryOnResponse: fn(ResponseInterface $r, RequestInterface $req): bool
 исключения PSR-18, поэтому внутренний клиент вызывается не более `maxAttempts` раз.
 Когда повторяемый ответ несёт корректный заголовок `Retry-After`, эта задержка
 замещает настроенный backoff (delta-seconds либо IMF-fixdate; устаревшие формы
-RFC 850 и asctime игнорируются). Задержка от сервера идёт без jitter и
-ограничивается `maxRetryAfterMs`. Транспортные исключения всегда откатываются на
-backoff (`Retry-After` недоступен). Передайте `respectRetryAfter: false`, чтобы
-отключить обработку заголовка.
+RFC 850 и asctime игнорируются, как и delta-seconds слишком большие, чтобы быть
+пригодной задержкой, и даты, не проходящие точный round-trip формата
+IMF-fixdate — всё это откатывается на настроенный backoff). Задержка от сервера
+идёт без jitter и ограничивается `maxRetryAfterMs`. Транспортные исключения
+всегда откатываются на backoff (`Retry-After` недоступен). Передайте
+`respectRetryAfter: false`, чтобы отключить обработку заголовка.
+
+Перед каждой повторной отправкой тело запроса перематывается, если оно
+seekable — PSR-7 stream-тела хранят позицию, и без перемотки попытка 2+ POST
+молча ушла бы с пустым телом. **Запросы с non-seekable телом небезопасно
+повторять**: тело нельзя воспроизвести, повторная отправка передаст лишь
+остаток потока (обычно ничего). Используйте seekable-тело либо ограничьте
+retry идемпотентными/безтелесными запросами через `retryOnResponse` /
+`RetryDecisions::onlyIdempotent()`.
 
 `Http\HttpRetryExhausted` реализует `Psr\Http\Client\ClientExceptionInterface`,
 поэтому остаётся в рамках контракта PSR-18 — код, ловящий `ClientExceptionInterface`,

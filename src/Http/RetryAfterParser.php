@@ -40,11 +40,29 @@ final readonly class RetryAfterParser
                 return null;
             }
 
+            // (int) saturates at PHP_INT_MAX for oversized digit strings, and
+            // `* 1000` overflows int into float, which the `?int` return type
+            // would turn into a TypeError under strict_types - letting a
+            // hostile server crash the caller with one header. A delay this
+            // absurd is ignored like any other unusable value.
+            if ($seconds > intdiv(\PHP_INT_MAX, 1000)) {
+                return null;
+            }
+
             return $seconds * 1000;
         }
 
         $target = \DateTimeImmutable::createFromFormat(self::HTTP_DATE_FORMAT, $headerValue);
         if ($target === false) {
+            return null;
+        }
+
+        // createFromFormat's `Y` also accepts 1-3 digit years, so a malformed
+        // "Thu, 21 Aug 26 10:00:00 GMT" would parse as the year 26 AD - far in
+        // the past, clamping the delay to an immediate-hammer 0ms instead of
+        // the documented null-then-backoff fallback. Only a value that
+        // round-trips through the same format verbatim is a real IMF-fixdate.
+        if ($target->format(self::HTTP_DATE_FORMAT) !== $headerValue) {
             return null;
         }
 
