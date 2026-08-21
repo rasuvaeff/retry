@@ -724,7 +724,7 @@ final class RetryingHttpClientTest
     {
         $body = new FakeStream(contents: '{"charge":100}');
         $seenBodies = [];
-        $inner = new class($seenBodies) implements ClientInterface {
+        $inner = new class ($seenBodies) implements ClientInterface {
             /** @param list<string> $seenBodies */
             public function __construct(private array &$seenBodies) {}
 
