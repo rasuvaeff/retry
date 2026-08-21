@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+## 1.2.2 — 2026-08-21
+
 - Migrate the property-based test suite from the frozen `rasuvaeff/property-testing` 2.x to the new `rasuvaeff/property-testing-testo` adapter (drop-in, no PHP code changes; same `#[Property]` attribute and `Gen` API).
 - Adopt `rasuvaeff/rector-named-literals` and apply the named-argument rule to literal calls.
+- Raise `rasuvaeff/property-testing-testo` to `^0.6`.
+- Fix the docblock on `JitterMode::Additive`: it described a "symmetric factor... in (0, 1]", but `AdditiveJitter` is one-sided (spreads the delay downward only) and accepts a factor of `0` — this contradicted the class's own correct documentation everywhere else (README, `AGENTS.md`, llms.txt).
+- Give the "Backward compatibility" CI job the same SKIPPED-report/intentional-boundary tolerance the other packages in this monorepo already carry, so a future intentional major (or roave reporting a static-analysis-limitation SKIPPED finding) doesn't permanently block the required status check.
 
 ## 1.2.1 — 2026-07-25
 

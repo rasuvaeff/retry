@@ -33,10 +33,10 @@ final readonly class HttpAttemptRecord
         if ($elapsedMs < 0) {
             throw new \InvalidArgumentException('Elapsed must be non-negative');
         }
-        if (!$response instanceof \Psr\Http\Message\ResponseInterface && !$exception instanceof \Throwable) {
+        if (!$response instanceof ResponseInterface && !$exception instanceof \Throwable) {
             throw new \InvalidArgumentException('Either response or exception must be provided');
         }
-        if ($response instanceof \Psr\Http\Message\ResponseInterface && $exception instanceof \Throwable) {
+        if ($response instanceof ResponseInterface && $exception instanceof \Throwable) {
             throw new \InvalidArgumentException('Response and exception cannot be provided together');
         }
     }
