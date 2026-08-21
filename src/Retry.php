@@ -409,8 +409,16 @@ final readonly class Retry
     {
         $now = $this->clock->now();
 
-        return ($now->getTimestamp() - $startedAt->getTimestamp()) * 1000
-            + (int) (((int) $now->format('u') - (int) $startedAt->format('u')) / 1000);
+        // Clamped at zero: a backwards clock step (NTP correction) would
+        // otherwise produce a negative elapsed, and AttemptRecord's
+        // constructor would throw from inside the retry machinery itself -
+        // losing the operation's own exception. Slightly under-counting the
+        // budget after a step is the right degradation for a retry primitive.
+        return max(
+            0,
+            ($now->getTimestamp() - $startedAt->getTimestamp()) * 1000
+                + (int) (((int) $now->format('u') - (int) $startedAt->format('u')) / 1000),
+        );
     }
 
     /**

@@ -11,6 +11,7 @@ use Rasuvaeff\Retry\Clock\FakeClock;
 use Rasuvaeff\Retry\Http\RetryAfterParser;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Test;
 
 #[Test]
@@ -114,6 +115,57 @@ final class RetryAfterParserTest
         Assert::same($delay, 500);
     }
 
+    /**
+     * A 16+-digit delta-seconds used to overflow int on `* 1000` and, under
+     * strict_types with a `?int` return, throw TypeError - letting a hostile
+     * server crash the caller with one header (it escaped the PSR-18
+     * ClientExceptionInterface catch entirely). Any digit string too large to
+     * be a usable delay is ignored like other unusable values.
+     */
+    #[DataProvider('oversizedDeltaSecondsProvider')]
+    public function oversizedDeltaSecondsAreIgnoredNotFatal(string $headerValue): void
+    {
+        $parser = new RetryAfterParser(clock: new FakeClock());
+
+        Assert::null($parser->parseMs(headerValue: $headerValue));
+    }
+
+    public static function oversizedDeltaSecondsProvider(): iterable
+    {
+        yield '19 digits saturates the int cast' => ['99999999999999999999'];
+        yield '16 digits overflows on the * 1000' => ['9223372036854776'];
+        yield 'exactly PHP_INT_MAX' => [(string) \PHP_INT_MAX];
+        yield 'one past the largest usable value' => [(string) (intdiv(\PHP_INT_MAX, 1000) + 1)];
+    }
+
+    public function largestUsableDeltaSecondsStillParses(): void
+    {
+        $parser = new RetryAfterParser(clock: new FakeClock());
+        $seconds = intdiv(\PHP_INT_MAX, 1000);
+
+        Assert::same($parser->parseMs(headerValue: (string) $seconds), $seconds * 1000);
+    }
+
+    /**
+     * createFromFormat's `Y` accepts 1-3 digit years, so a malformed
+     * two-digit-year date used to parse as the year 26 AD - far in the past,
+     * clamping to an immediate-hammer 0ms delay instead of the documented
+     * null-then-backoff fallback.
+     */
+    public function rejectsTwoDigitYearHttpDate(): void
+    {
+        $parser = new RetryAfterParser(clock: new FakeClock());
+
+        Assert::null($parser->parseMs(headerValue: 'Thu, 21 Aug 26 10:00:00 GMT'));
+    }
+
+    public function rejectsWhitespacePaddedHttpDate(): void
+    {
+        $parser = new RetryAfterParser(clock: new FakeClock());
+
+        Assert::null($parser->parseMs(headerValue: ' Sun, 01 Jun 2025 12:00:30 GMT'));
+    }
+
     #[Property(runs: 300)]
     public function positiveDeltaSecondsBecomeMilliseconds(int $seconds): void
     {
@@ -125,6 +177,17 @@ final class RetryAfterParserTest
     /** @return array<string, ArbitraryInterface> */
     public static function positiveDeltaSecondsBecomeMillisecondsGenerators(): array
     {
-        return ['seconds' => Gen::intBetween(1, 1_000_000)];
+        // The full usable range, up to the overflow-guard boundary - the
+        // previous cap of 1e6 was five orders of magnitude short of it.
+        // Everyday small values are still exercised via edge bias and the
+        // Examples below.
+        return ['seconds' => Gen::intBetween(1, intdiv(\PHP_INT_MAX, 1000))];
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function positiveDeltaSecondsBecomeMillisecondsExamples(): iterable
+    {
+        yield 'largest usable value' => [intdiv(\PHP_INT_MAX, 1000)];
+        yield 'ordinary value' => [120];
     }
 }

@@ -12,6 +12,7 @@ final readonly class FakeRequest implements RequestInterface
 {
     public function __construct(
         private string $method = 'GET',
+        private ?StreamInterface $body = null,
     ) {}
 
     #[\Override]
@@ -107,7 +108,10 @@ final readonly class FakeRequest implements RequestInterface
     #[\Override]
     public function getBody(): StreamInterface
     {
-        throw new \LogicException('Body is not used by this test double');
+        // The decorator legitimately touches the body since the rewind fix:
+        // it rewinds a seekable body before every re-send. Default to an
+        // empty seekable stream for tests that don't care about the body.
+        return $this->body ?? new FakeStream();
     }
 
     #[\Override]

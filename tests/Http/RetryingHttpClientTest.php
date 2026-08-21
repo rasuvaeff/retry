@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Retry\Tests\Http;
 
+use Psr\Clock\ClockInterface;
 use Psr\Http\Client\ClientExceptionInterface;
+use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Retry\Clock\FakeClock;
 use Rasuvaeff\Retry\Http\HttpAttemptRecord;
 use Rasuvaeff\Retry\Http\HttpRetryExhausted;
 use Rasuvaeff\Retry\Http\RetryingHttpClient;
+use Rasuvaeff\Retry\Jitter\AdditiveJitter;
+use Rasuvaeff\Retry\Randomizer\FixedRandomizer;
 use Rasuvaeff\Retry\Retry;
 use Rasuvaeff\Retry\RetryPolicy;
 use Rasuvaeff\Retry\Sleeper\FakeSleeper;
+use Rasuvaeff\Retry\Sleeper\SleeperInterface;
+use Rasuvaeff\Retry\Tests\Sleeper\ClockAdvancingSleeper;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -272,9 +278,9 @@ final class RetryingHttpClientTest
             policy: new RetryPolicy(
                 maxAttempts: $base->maxAttempts(),
                 backoff: $base->backoff(),
-                jitter: new \Rasuvaeff\Retry\Jitter\AdditiveJitter(factor: 1.0),
+                jitter: new AdditiveJitter(factor: 1.0),
                 sleeper: $sleeper,
-                randomizer: new \Rasuvaeff\Retry\Randomizer\FixedRandomizer(fraction: 1.0),
+                randomizer: new FixedRandomizer(fraction: 1.0),
             ),
             retryOnResponse: fn(ResponseInterface $response): bool => $response->getStatusCode() >= 500,
             clock: new FakeClock(),
@@ -339,7 +345,7 @@ final class RetryingHttpClientTest
             retryOnResponse: fn(ResponseInterface $response): bool => $response->getStatusCode() >= 500,
             clock: new FakeClock(),
             onRetry: [
-                function (\Rasuvaeff\Retry\Http\HttpAttemptRecord $record) use (&$records): void {
+                function (HttpAttemptRecord $record) use (&$records): void {
                     $records[] = [$record->attempt, $record->delayMs, $record->response?->getStatusCode(), $record->exception];
                 },
             ],
@@ -365,7 +371,7 @@ final class RetryingHttpClientTest
             retryOnResponse: fn(ResponseInterface $response): bool => $response->getStatusCode() >= 500,
             clock: new FakeClock(),
             onRetry: [
-                function (\Rasuvaeff\Retry\Http\HttpAttemptRecord $record) use (&$records): void {
+                function (HttpAttemptRecord $record) use (&$records): void {
                     $records[] = [$record->attempt, $record->delayMs, $record->response, $record->exception?->getMessage()];
                 },
             ],
@@ -380,7 +386,7 @@ final class RetryingHttpClientTest
     public function onExhaustedCalledWhenBudgetExceededOnResponse(): void
     {
         $clock = new FakeClock();
-        $sleeper = new \Rasuvaeff\Retry\Tests\Sleeper\ClockAdvancingSleeper(clock: $clock);
+        $sleeper = new ClockAdvancingSleeper(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -421,7 +427,7 @@ final class RetryingHttpClientTest
             policy: $this->fixedPolicy(delayMs: 10, maxAttempts: 3, sleeper: $sleeper),
             retryOnResponse: fn(ResponseInterface $response): bool => $response->getStatusCode() >= 500,
             clock: new FakeClock(),
-            retryOnException: fn(\Psr\Http\Client\ClientExceptionInterface $e): bool => false,
+            retryOnException: fn(ClientExceptionInterface $e): bool => false,
         );
 
         try {
@@ -440,7 +446,7 @@ final class RetryingHttpClientTest
     public function budgetReturnsLastResponseWhenExceeded(): void
     {
         $clock = new FakeClock();
-        $sleeper = new \Rasuvaeff\Retry\Tests\Sleeper\ClockAdvancingSleeper(clock: $clock);
+        $sleeper = new ClockAdvancingSleeper(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -637,7 +643,7 @@ final class RetryingHttpClientTest
     public function budgetExactlyEqualToFirstDelayStillRetriesOnce(): void
     {
         $clock = new FakeClock();
-        $sleeper = new \Rasuvaeff\Retry\Tests\Sleeper\ClockAdvancingSleeper(clock: $clock);
+        $sleeper = new ClockAdvancingSleeper(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -659,7 +665,7 @@ final class RetryingHttpClientTest
     public function elapsedMsAccountsForFullSecondsAndMillis(): void
     {
         $clock = new FakeClock(now: new \DateTimeImmutable('2025-01-01T00:00:00.250000+00:00'));
-        $sleeper = new \Rasuvaeff\Retry\Tests\Sleeper\ClockAdvancingSleeper(clock: $clock);
+        $sleeper = new ClockAdvancingSleeper(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -685,7 +691,7 @@ final class RetryingHttpClientTest
     public function elapsedMsKeepsSubSecondMillisecondPrecision(): void
     {
         $clock = new FakeClock(now: new \DateTimeImmutable('2025-01-01T00:00:00.000000+00:00'));
-        $sleeper = new \Rasuvaeff\Retry\Tests\Sleeper\ClockAdvancingSleeper(clock: $clock);
+        $sleeper = new ClockAdvancingSleeper(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -708,7 +714,103 @@ final class RetryingHttpClientTest
         Assert::same($exhaustedHistory[1]->elapsedMs ?? -1, 999);
     }
 
-    private function fixedPolicy(int $delayMs, int $maxAttempts, \Rasuvaeff\Retry\Sleeper\SleeperInterface $sleeper): RetryPolicy
+    /**
+     * PSR-7 stream bodies are stateful: without an explicit rewind before the
+     * re-send, attempt 2+ of a POST silently transmits an empty body (the
+     * stream sits at EOF after attempt 1). The inner client here reads via
+     * `getContents()`, as a byte-oriented transport would.
+     */
+    public function seekableRequestBodyIsRewoundBeforeEachRetry(): void
+    {
+        $body = new FakeStream(contents: '{"charge":100}');
+        $seenBodies = [];
+        $inner = new class ($seenBodies) implements ClientInterface {
+            /** @param list<string> $seenBodies */
+            public function __construct(private array &$seenBodies) {}
+
+            #[\Override]
+            public function sendRequest(RequestInterface $request): ResponseInterface
+            {
+                $this->seenBodies[] = $request->getBody()->getContents();
+
+                return new FakeResponse(statusCode: \count($this->seenBodies) < 3 ? 503 : 200);
+            }
+        };
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: $this->fixedPolicy(delayMs: 1, maxAttempts: 3, sleeper: new FakeSleeper()),
+            retryOnResponse: fn(ResponseInterface $response): bool => $response->getStatusCode() >= 500,
+            clock: new FakeClock(),
+        );
+
+        $response = $client->sendRequest(request: new FakeRequest(method: 'POST', body: $body));
+
+        Assert::same($response->getStatusCode(), 200);
+        Assert::same($seenBodies, ['{"charge":100}', '{"charge":100}', '{"charge":100}']);
+        Assert::same($body->rewinds(), 2);
+    }
+
+    public function nonSeekableRequestBodyIsLeftUntouchedOnRetry(): void
+    {
+        $body = new FakeStream(contents: 'one-shot', seekable: false);
+        $inner = new QueueHttpClient(items: [
+            new FakeResponse(statusCode: 503),
+            new FakeResponse(statusCode: 200),
+        ]);
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: $this->fixedPolicy(delayMs: 1, maxAttempts: 2, sleeper: new FakeSleeper()),
+            retryOnResponse: fn(ResponseInterface $response): bool => $response->getStatusCode() >= 500,
+            clock: new FakeClock(),
+        );
+
+        $response = $client->sendRequest(request: new FakeRequest(method: 'POST', body: $body));
+
+        Assert::same($response->getStatusCode(), 200);
+        Assert::same($body->rewinds(), 0);
+    }
+
+    /**
+     * A backwards clock step (NTP correction) mid-run must not make the retry
+     * machinery itself throw: a negative elapsed would blow up
+     * HttpAttemptRecord's constructor and escape the PSR-18 contract.
+     */
+    public function backwardsClockStepDoesNotBreakTheRetryLoop(): void
+    {
+        $clock = new class implements ClockInterface {
+            private int $calls = 0;
+
+            #[\Override]
+            public function now(): \DateTimeImmutable
+            {
+                // Second and later reads are 10s BEFORE the first one.
+                return 0 === $this->calls++
+                    ? new \DateTimeImmutable('2025-01-01T00:00:10+00:00')
+                    : new \DateTimeImmutable('2025-01-01T00:00:00+00:00');
+            }
+        };
+        $inner = new QueueHttpClient(items: [
+            new FakeResponse(statusCode: 503),
+            new FakeResponse(statusCode: 200),
+        ]);
+        $records = [];
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: $this->fixedPolicy(delayMs: 1, maxAttempts: 2, sleeper: new FakeSleeper()),
+            retryOnResponse: fn(ResponseInterface $response): bool => $response->getStatusCode() >= 500,
+            clock: $clock,
+            onRetry: [static function (HttpAttemptRecord $record) use (&$records): void {
+                $records[] = $record;
+            }],
+        );
+
+        $response = $client->sendRequest(request: new FakeRequest());
+
+        Assert::same($response->getStatusCode(), 200);
+        Assert::same($records[0]->elapsedMs, 0);
+    }
+
+    private function fixedPolicy(int $delayMs, int $maxAttempts, SleeperInterface $sleeper): RetryPolicy
     {
         $base = RetryPolicy::fixed(delayMs: $delayMs, maxAttempts: $maxAttempts);
 

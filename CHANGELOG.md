@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.2.3 — 2026-08-21
+
+- Fix a remote crash: a `Retry-After` delta-seconds of 16+ digits overflowed `int` on the `* 1000` and threw an uncaught `TypeError` — escaping the PSR-18 `ClientExceptionInterface` contract, so one hostile header could kill the consumer. Oversized values are now ignored like other unusable values (fall back to configured backoff).
+- Fix the retry loop crashing on a backwards clock step (NTP correction): a negative elapsed made `AttemptRecord`'s constructor throw from inside the catch block, losing the operation's own exception. Elapsed time is now clamped at zero in both the closure and the HTTP paths.
+- Rewind a seekable request body before every HTTP re-send: PSR-7 stream bodies are stateful, and attempt 2+ of a POST silently transmitted an empty body. Non-seekable bodies are documented as not safely retryable.
+- Fix `Retry-After` HTTP-date strictness: `createFromFormat`'s `Y` accepted 1-3 digit years, so a malformed two-digit-year date parsed as ancient history and clamped to an immediate-hammer 0ms delay. Only values that round-trip the IMF-fixdate format exactly are accepted; everything else falls back to backoff.
+- Replace deprecated `lcg_value()` (PHP 8.4+) in `SystemRandomizer` with `Random\Randomizer::getFloat()` — every jittered retry emitted `E_DEPRECATED` on PHP 8.4/8.5.
+
 ## 1.2.2 — 2026-08-21
 
 - Migrate the property-based test suite from the frozen `rasuvaeff/property-testing` 2.x to the new `rasuvaeff/property-testing-testo` adapter (drop-in, no PHP code changes; same `#[Property]` attribute and `Gen` API).
