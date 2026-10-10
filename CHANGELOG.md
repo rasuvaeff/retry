@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 — 2026-10-10
+
+- Added `Retry::withContext()`: cooperative cancellation and deadline checks
+  before attempts and during sliced backoff sleeps; context exceptions are not
+  retried.
+
 ## 1.3.0 — 2026-10-10
 
 - Add `Retry::toPolicy(): RetryPolicy`, so one builder configures both a closure runner (or a `rasuvaeff/resilience` pipeline) and `Http\RetryingHttpClient`. Only max attempts, backoff, jitter, sleeper and randomizer carry over; predicates, hooks, the `stopAfterMs()` budget and the clock stay client-constructor arguments (#28).

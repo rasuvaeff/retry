@@ -23,6 +23,7 @@ a PSR-18 HTTP client decorator that honors `Retry-After`.
 - `psr/http-client` ^1.0
 - `psr/http-message` ^1.0 || ^2.0
 - `rasuvaeff/duration` ^1.0
+- `rasuvaeff/context` ^1.0
 
 ## Installation
 
@@ -146,6 +147,20 @@ the full `AttemptRecord`; `onExhausted` callbacks receive the `RetryExhausted`.
 `RetryExhausted::reason` is an `ExhaustionReason` (`MaxAttempts` or `TimeBudget`)
 explaining why the loop gave up. The terminal `AttemptRecord` has `delayMs` of
 `null` (no sleep followed it).
+
+### Cooperative context
+
+Attach a request or job context with `withContext()`. The context is checked
+before every attempt and between 50 ms sleep slices; context exceptions stop
+the loop immediately and are never retried.
+
+```php
+use Rasuvaeff\Context\Context;
+
+[$context, $controller] = Context::background()->withTimeout(2.0);
+$value = Retry::new()->withContext($context)->run(fn(): string => flakyOperation());
+$controller->cancel();
+```
 
 ### Result integration
 

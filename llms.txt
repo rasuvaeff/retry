@@ -42,6 +42,8 @@ composer require rasuvaeff/retry
   `withClock()`. No magic methods.
 - `stopAfterMs(int)` caps total wall-clock time: attempt 1 always runs, a
   follow-up is skipped when `elapsed + nextDelay` would exceed the budget.
+- `withContext(Context)` checks cooperative cancellation/deadline before each
+  attempt and between 50 ms sleep slices. `ContextException` is never retried.
 - Clock uses PSR-20 (`Psr\Clock\ClockInterface`); no custom clock abstraction.
 - `Retry::onRetry` callbacks receive an `AttemptRecord`; `Retry::onExhausted`
   callbacks receive the `RetryExhausted` exception (no positional args).
@@ -97,6 +99,10 @@ $value = Retry::new()
     ->withClock(new SystemClock())
     ->onRetry(fn(AttemptRecord $record) => null)
     ->run(fn(): string => flakyOperation());
+
+[$ctx, $controller] = Rasuvaeff\Context\Context::background()->withTimeout(2.0);
+$value = Retry::new()->withContext($ctx)->run(fn(): string => flakyOperation());
+$controller->cancel();
 ```
 
 Core types: `Retry`, `RetryPolicy`, `RetryPolicyInterface`, `RetryExhausted`,

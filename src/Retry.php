@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Rasuvaeff\Retry;
 
 use Psr\Clock\ClockInterface;
+use Rasuvaeff\Context\Context;
+use Rasuvaeff\Context\ContextException;
 use Rasuvaeff\Duration\Duration;
 use Rasuvaeff\Retry\BackoffStrategy\BackoffStrategyInterface;
 use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
@@ -41,6 +43,7 @@ final readonly class Retry
         private SleeperInterface $sleeper,
         private RandomizerInterface $randomizer,
         private ?int $budgetMs,
+        private ?Context $context,
         private ClockInterface $clock,
         private array $retryOn,
         private array $retryIf,
@@ -63,6 +66,7 @@ final readonly class Retry
             sleeper: new SystemSleeper(),
             randomizer: new SystemRandomizer(),
             budgetMs: null,
+            context: null,
             clock: new SystemClock(),
             retryOn: [\Exception::class],
             retryIf: [],
@@ -274,6 +278,12 @@ final readonly class Retry
         return $this->copy(clock: $clock);
     }
 
+    /** Derives retry work from a cooperative cancellation/deadline context. */
+    public function withContext(Context $context): self
+    {
+        return $this->copy(context: $context);
+    }
+
     /**
      * The attempt/delay half of this builder as a {@see RetryPolicy} for
      * {@see Http\RetryingHttpClient}: max attempts, backoff, jitter, sleeper
@@ -318,6 +328,7 @@ final readonly class Retry
 
         for ($attempt = 1; $attempt <= $this->maxAttempts; $attempt++) {
             try {
+                $this->context?->assertActive();
                 $result = $operation();
 
                 foreach ($this->retryIfResult as $predicate) {
@@ -328,6 +339,9 @@ final readonly class Retry
 
                 return $result;
             } catch (\Throwable $exception) {
+                if ($exception instanceof ContextException) {
+                    throw $exception;
+                }
                 if (!$this->shouldRetry(exception: $exception)) {
                     throw $exception;
                 }
@@ -380,7 +394,7 @@ final readonly class Retry
                     $callback($record);
                 }
 
-                $this->sleeper->sleepMs(ms: $delayMs);
+                $this->sleepWithContext($delayMs);
             }
         }
 
@@ -423,6 +437,24 @@ final readonly class Retry
             attempt: $attempt,
             randomizer: $this->randomizer,
         );
+    }
+
+    private function sleepWithContext(int $delayMs): void
+    {
+        if ($this->context === null) {
+            $this->sleeper->sleepMs(ms: $delayMs);
+
+            return;
+        }
+
+        $remaining = $delayMs;
+        while ($remaining > 0) {
+            $this->context->assertActive();
+            $slice = min(50, $remaining, (int) ($this->context->remainingMs() ?? $remaining));
+            $this->sleeper->sleepMs(ms: max(1, $slice));
+            $remaining -= $slice;
+        }
+        $this->context->assertActive();
     }
 
     private function elapsedMs(\DateTimeImmutable $startedAt): int
@@ -474,6 +506,7 @@ final readonly class Retry
         ?SleeperInterface $sleeper = null,
         ?RandomizerInterface $randomizer = null,
         ?int $budgetMs = null,
+        ?Context $context = null,
         ?ClockInterface $clock = null,
         ?array $retryOn = null,
         ?array $retryIf = null,
@@ -489,6 +522,7 @@ final readonly class Retry
             sleeper: $sleeper ?? $this->sleeper,
             randomizer: $randomizer ?? $this->randomizer,
             budgetMs: $budgetMs ?? $this->budgetMs,
+            context: $context ?? $this->context,
             clock: $clock ?? $this->clock,
             retryOn: $retryOn ?? $this->retryOn,
             retryIf: $retryIf ?? $this->retryIf,

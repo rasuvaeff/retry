@@ -44,6 +44,11 @@ PSR-18 decorator. Namespace `Rasuvaeff\Retry\`.
    scheduling further attempts; a hanging request hangs. Configure the timeout
    on the concrete HTTP client (Guzzle/Symfony), not via retry.
 
+6. **Context cancellation is terminal.** `Retry::withContext($context)` checks
+   before each attempt and between 50 ms backoff slices. `ContextException` is
+   never retried; use the context HTTP adapter when the transport also needs
+   the remaining timeout.
+
 ## Canonical usage
 
 ```php
