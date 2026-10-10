@@ -35,12 +35,6 @@
         "testo/testo": "^0.10.25",
         "vimeo/psalm": "^6.16"
     },
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/rasuvaeff/context"
-        }
-    ],
     "autoload": {
         "psr-4": {
             "Rasuvaeff\\Retry\\": "src/"
