@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-10-10
+
+- Add `Retry::toPolicy(): RetryPolicy`, so one builder configures both a closure runner (or a `rasuvaeff/resilience` pipeline) and `Http\RetryingHttpClient`. Only max attempts, backoff, jitter, sleeper and randomizer carry over; predicates, hooks, the `stopAfterMs()` budget and the clock stay client-constructor arguments (#28).
+- `RetryPolicy::fixed()` / `exponential()` / `fixedFor()` / `exponentialFor()` accept an optional `jitter:` argument; default stays `NoJitter` (#28).
+- `Http\RetryingHttpClient`: `retryOnResponse` is now optional and defaults to `RetryDecisions::transient()`; `retryOnResponse` and `retryOnException` may declare a third `int $attempt` parameter (1-based), passed only to closures that declare it (#28).
+- Add `Sleeper\FakeSleeper::advancing(FakeClock $clock, ?\Closure $onSleep = null)`: a test sleeper that advances the fake clock by every delay and runs an optional hook, so time budgets and other clock-driven state observe the sleep without a hand-written double (#27).
+- Fix `examples/retry_after.php`: its request threw on `getBody()`, which the client has called since the body-rewind fix, so the example crashed after the first retry.
 
 ## 1.2.3 — 2026-08-21
 

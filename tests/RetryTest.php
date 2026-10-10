@@ -19,7 +19,6 @@ use Rasuvaeff\Retry\Randomizer\FixedRandomizer;
 use Rasuvaeff\Retry\Retry;
 use Rasuvaeff\Retry\RetryExhausted;
 use Rasuvaeff\Retry\Sleeper\FakeSleeper;
-use Rasuvaeff\Retry\Tests\Sleeper\ClockAdvancingSleeper;
 use Rasuvaeff\Retry\UnacceptableResult;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -171,7 +170,7 @@ final class RetryTest
     public function stopAfterAbortsBeforeNextAttemptWhenBudgetExhausted(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $calls = 0;
 
         try {
@@ -510,7 +509,7 @@ final class RetryTest
     public function stopAfterMsAbortsBeforeNextAttemptWhenBudgetExhausted(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $calls = 0;
 
         try {
@@ -539,7 +538,7 @@ final class RetryTest
     public function stopAfterMsAllowsAllAttemptsWhenBudgetLargeEnough(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $calls = 0;
 
         $value = Retry::new()
@@ -564,7 +563,7 @@ final class RetryTest
     public function stopAfterMsStillAllowsAtLeastOneAttempt(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $calls = 0;
 
         try {
@@ -600,7 +599,7 @@ final class RetryTest
     public function historyRecordCarriesElapsedMs(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $calls = 0;
 
         try {
@@ -647,7 +646,7 @@ final class RetryTest
     public function timeBudgetExhaustionReportsCorrectReason(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
 
         try {
             Retry::new()
@@ -1019,7 +1018,7 @@ final class RetryTest
     public function budgetExactlyEqualToNextDelayStillRetries(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $calls = 0;
 
         try {
@@ -1046,7 +1045,7 @@ final class RetryTest
     public function elapsedMsAccountsForFullSecondsAndMillis(): void
     {
         $clock = new FakeClock(now: new \DateTimeImmutable('2025-01-01T00:00:00.250000+00:00'));
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
 
         try {
             Retry::new()
@@ -1069,7 +1068,7 @@ final class RetryTest
     public function elapsedMsKeepsSubSecondMillisecondPrecision(): void
     {
         $clock = new FakeClock(now: new \DateTimeImmutable('2025-01-01T00:00:00.000000+00:00'));
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
 
         try {
             Retry::new()

@@ -207,6 +207,39 @@ retryOnResponse: fn(ResponseInterface $r, RequestInterface $req): bool
     => $req->getMethod() === 'GET' && $r->getStatusCode() >= 500,
 ```
 
+`retryOnResponse` необязателен: без него клиент повторяет
+`RetryDecisions::transient()` (408, 425, 429, 500, 502, 503, 504).
+
+Любой из предикатов может объявить третий параметр `int $attempt` — номер
+оцениваемой попытки, с 1. Он передаётся только замыканиям, у которых три и
+более параметра (или variadic), поэтому двухаргументные замыкания работают
+как раньше:
+
+```php
+retryOnException: fn(ClientExceptionInterface $e, RequestInterface $req, int $attempt): bool
+    => $attempt === 1, // например, один быстрый повтор после смены прокси, затем сдаться
+```
+
+#### Одна политика для замыканий и HTTP
+
+`Retry::toPolicy()` превращает построитель в `RetryPolicy`, который принимает
+HTTP-клиент, поэтому один `Retry` настраивает и пайплайн `rasuvaeff/resilience`,
+и `RetryingHttpClient`:
+
+```php
+$retry = Retry::exponential(maxAttempts: 4, baseMs: 200, capMs: 2_000)->jitter(factor: 0.2);
+
+$client = new RetryingHttpClient(inner: $psr18Client, policy: $retry->toPolicy());
+```
+
+Переносится только часть «попытки и задержки»: число попыток, backoff, jitter,
+sleeper и randomizer. Предикаты исключений и результата, хуки
+`onRetry`/`onExhausted`, бюджет `stopAfterMs()` и часы **не** переносятся —
+передайте их HTTP-аналоги (`retryOnResponse`, `retryOnException`, `onRetry`,
+`onExhausted`, `budgetMs`, `clock`) в конструктор клиента. `RetryPolicy::fixed()` /
+`exponential()` / `fixedFor()` / `exponentialFor()` также принимают
+необязательный аргумент `jitter:`.
+
 Готовые предикаты ответа:
 
 | Предикат | Когда повторяет |
@@ -216,15 +249,16 @@ retryOnResponse: fn(ResponseInterface $r, RequestInterface $req): bool
 | `RetryDecisions::transient()` | 408, 425, 429, 500, 502, 503, 504. |
 | `RetryDecisions::onlyIdempotent($inner)` | Оборачивает `$inner`; повторяет **только** идемпотентные методы (GET, HEAD, PUT, DELETE, OPTIONS, TRACE). |
 
-Аргументы конструктора помимо `inner` / `policy` / `retryOnResponse`:
+Аргументы конструктора помимо `inner` / `policy`:
 
 | Аргумент | По умолчанию | Эффект |
 |---|---|---|
+| `retryOnResponse` | `RetryDecisions::transient()` | Предикат `fn(ResponseInterface, RequestInterface[, int $attempt]): bool`. |
 | `clock` | `Clock\SystemClock` | Часы PSR-20 для разбора HTTP-date в `Retry-After` и тайминга бюджета. |
 | `respectRetryAfter` | `true` | Уважать заголовок `Retry-After` от сервера. |
 | `maxRetryAfterMs` | `300_000` | Верхняя граница задержки из `Retry-After`; `null` отключает ограничение. |
 | `budgetMs` | `null` | Суммарный wall-clock-бюджет; повтор пропускается, когда `elapsed + delay` превышает его. |
-| `retryOnException` | `null` | Предикат `fn(ClientExceptionInterface, RequestInterface): bool`; `null` повторяет каждое транспортное исключение. Несовпадающие исключения пробрасываются как есть. |
+| `retryOnException` | `null` | Предикат `fn(ClientExceptionInterface, RequestInterface[, int $attempt]): bool`; `null` повторяет каждое транспортное исключение. Несовпадающие исключения пробрасываются как есть. |
 | `throwOnExhausted` | `false` | При `true` выбрасывает `Http\HttpRetryExhausted` (с историей) при исчерпании вместо возврата последнего ответа / проброса последнего транспортного исключения. |
 | `onRetry` | `[]` | Колбэки `fn(HttpAttemptRecord): void`, срабатывают перед сном каждой повторной попытки. |
 | `onExhausted` | `[]` | Колбэки `fn(HttpRetryExhausted): void`, срабатывают при любом исчерпании (`maxAttempts` или `budgetMs`); аргумент несёт `attempts` и полную `history`. |
@@ -255,14 +289,15 @@ retry идемпотентными/безтелесными запросами �
 Каждая `HttpAttemptRecord` несёт `attempt`, `delayMs`, `elapsedMs` и ровно одно
 из `response` / `exception` (никогда обоих, никогда ни одного). Внедрите
 `Clock\FakeClock`, чтобы сделать задержки `Retry-After` и тайминг бюджета
-детерминированными в тестах.
+детерминированными в тестах, и `Sleeper\FakeSleeper::advancing($clock)`, чтобы
+каждый сон backoff сдвигал эти часы (бюджет исчерпывается без реального ожидания).
 
 ### Публичный API
 
 | Класс | Описание |
 |---|---|
 | `Retry` | Иммутабельный builder retry и раннер замыканий. |
-| `RetryPolicy` | Переиспользуемый объект политики для декораторов. |
+| `RetryPolicy` | Переиспользуемый объект политики для декораторов; `Retry::toPolicy()` строит его из построителя. |
 | `RetryPolicyInterface` | Контракт политики только для чтения. |
 | `RetryExhausted` | Исключение с попытками, последним исключением, историей и `reason`. |
 | `ExhaustionReason` | Enum: `MaxAttempts` или `TimeBudget`. |
@@ -281,7 +316,7 @@ retry идемпотентными/безтелесными запросами �
 | `Clock\FakeClock` | Мутабельные часы PSR-20 для тестов с `advanceMs()`. |
 | `Sleeper\SleeperInterface` | Контракт сна. |
 | `Sleeper\SystemSleeper` | Реализация на `usleep()`. |
-| `Sleeper\FakeSleeper` | Тестовый sleeper, записывающий задержки. |
+| `Sleeper\FakeSleeper` | Тестовый sleeper, записывающий задержки; `FakeSleeper::advancing(FakeClock $clock, ?\Closure $onSleep = null)` ещё и сдвигает фейковые часы на каждую задержку и вызывает необязательный хук. |
 | `Randomizer\RandomizerInterface` | Контракт float-рандомайзера. |
 | `Randomizer\SystemRandomizer` | Runtime-рандомайзер. |
 | `Randomizer\FixedRandomizer` | Детерминированный тестовый рандомайзер. |

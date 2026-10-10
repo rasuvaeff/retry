@@ -52,7 +52,7 @@ final class FakeStream implements StreamInterface
     }
 
     #[\Override]
-    public function getSize(): ?int
+    public function getSize(): int
     {
         return \strlen($this->contents);
     }

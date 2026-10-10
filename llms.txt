@@ -65,6 +65,17 @@ composer require rasuvaeff/retry
   non-seekable body are NOT safely retryable — the body cannot be replayed.
   Unusable `Retry-After` values (oversized delta-seconds, dates that don't
   round-trip IMF-fixdate exactly) are ignored and fall back to backoff.
+- `retryOnResponse` is optional (default `RetryDecisions::transient()`). Either
+  predicate may declare a 3rd `int $attempt` (1-based); it is passed only to
+  closures with >= 3 params or variadic, so 2-arg closures are unchanged.
+- `Retry::toPolicy(): RetryPolicy` carries maxAttempts/backoff/jitter/sleeper/
+  randomizer ONLY. Predicates, hooks, `stopAfterMs` budget and clock do not
+  carry over — pass `retryOnResponse`/`retryOnException`/`onRetry`/
+  `onExhausted`/`budgetMs`/`clock` to `RetryingHttpClient` yourself.
+- `RetryPolicy::fixed()/exponential()/fixedFor()/exponentialFor()` take an
+  optional trailing `?JitterInterface $jitter` (default `NoJitter`).
+- `FakeSleeper::advancing(FakeClock $clock, ?\Closure $onSleep = null)`: each
+  `sleepMs(n)` advances the clock by n, records it, then calls `$onSleep(n)`.
 
 ## API reference
 
@@ -99,7 +110,8 @@ Jitter: `Jitter\JitterInterface`, `JitterMode` (enum), `FullJitter`,
 
 Clock (PSR-20): `Clock\SystemClock`, `Clock\FakeClock` (mutable, `advanceMs()`).
 
-Testability: `Sleeper\SleeperInterface`, `SystemSleeper`, `FakeSleeper`,
+Testability: `Sleeper\SleeperInterface`, `SystemSleeper`, `FakeSleeper`
+(`FakeSleeper::advancing($fakeClock)` moves the clock on every sleep),
 `Randomizer\RandomizerInterface`, `SystemRandomizer`, `FixedRandomizer`.
 
 HTTP: `Http\RetryingHttpClient` (PSR-18 decorator with `Retry-After` support),
@@ -116,7 +128,7 @@ use Rasuvaeff\Retry\RetryPolicy;
 $client = new RetryingHttpClient(
     inner: $psr18Client,
     policy: RetryPolicy::exponential(maxAttempts: 3, baseMs: 100),
-    retryOnResponse: RetryDecisions::onlyIdempotent(RetryDecisions::transient()),
+    retryOnResponse: RetryDecisions::onlyIdempotent(RetryDecisions::transient()), // optional; default transient()
     respectRetryAfter: true,    // honor Retry-After header
     maxRetryAfterMs: 300_000,   // cap server delay; null disables
     budgetMs: null,             // total wall-clock budget; null disables

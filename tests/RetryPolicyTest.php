@@ -8,9 +8,13 @@ use Rasuvaeff\Duration\Duration;
 use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\FixedBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\ImmediateBackoff;
+use Rasuvaeff\Retry\Jitter\AdditiveJitter;
 use Rasuvaeff\Retry\Jitter\NoJitter;
+use Rasuvaeff\Retry\Randomizer\FixedRandomizer;
 use Rasuvaeff\Retry\Randomizer\SystemRandomizer;
+use Rasuvaeff\Retry\Retry;
 use Rasuvaeff\Retry\RetryPolicy;
+use Rasuvaeff\Retry\Sleeper\FakeSleeper;
 use Rasuvaeff\Retry\Sleeper\SystemSleeper;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -19,6 +23,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(RetryPolicy::class)]
+#[Covers(Retry::class)]
 final class RetryPolicyTest
 {
     public function fixedPolicyExposesFixedBackoffAndDefaults(): void
@@ -81,5 +86,47 @@ final class RetryPolicyTest
         Expect::exception(\InvalidArgumentException::class)->withMessageContaining('Max attempts');
 
         RetryPolicy::immediate(maxAttempts: 0);
+    }
+
+    public function factoriesDefaultToNoJitter(): void
+    {
+        Assert::instanceOf(RetryPolicy::fixed()->jitter(), NoJitter::class);
+        Assert::instanceOf(RetryPolicy::exponential()->jitter(), NoJitter::class);
+        Assert::instanceOf(RetryPolicy::fixedFor(delay: Duration::millis(10))->jitter(), NoJitter::class);
+        Assert::instanceOf(
+            RetryPolicy::exponentialFor(base: Duration::millis(10), cap: Duration::seconds(1))->jitter(),
+            NoJitter::class,
+        );
+    }
+
+    public function factoriesAcceptJitter(): void
+    {
+        $jitter = new AdditiveJitter(factor: 0.2);
+
+        Assert::same(RetryPolicy::fixed(jitter: $jitter)->jitter(), $jitter);
+        Assert::same(RetryPolicy::exponential(jitter: $jitter)->jitter(), $jitter);
+        Assert::same(RetryPolicy::fixedFor(delay: Duration::millis(10), jitter: $jitter)->jitter(), $jitter);
+        Assert::same(
+            RetryPolicy::exponentialFor(base: Duration::millis(10), cap: Duration::seconds(1), jitter: $jitter)->jitter(),
+            $jitter,
+        );
+    }
+
+    public function retryBuilderConvertsToPolicy(): void
+    {
+        $sleeper = new FakeSleeper();
+        $randomizer = new FixedRandomizer(fraction: 0.5);
+        $jitter = new AdditiveJitter(factor: 0.1);
+        $policy = Retry::exponential(maxAttempts: 4, baseMs: 100, multiplier: 2.0, capMs: 1_000)
+            ->withJitter($jitter)
+            ->withSleeper($sleeper)
+            ->withRandomizer($randomizer)
+            ->toPolicy();
+
+        Assert::same($policy->maxAttempts(), 4);
+        Assert::same($policy->backoff()->delayMs(attempt: 3), 400);
+        Assert::same($policy->jitter(), $jitter);
+        Assert::same($policy->sleeper(), $sleeper);
+        Assert::same($policy->randomizer(), $randomizer);
     }
 }

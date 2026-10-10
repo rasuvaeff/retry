@@ -203,6 +203,39 @@ retryOnResponse: fn(ResponseInterface $r, RequestInterface $req): bool
     => $req->getMethod() === 'GET' && $r->getStatusCode() >= 500,
 ```
 
+`retryOnResponse` is optional: without it the client retries
+`RetryDecisions::transient()` (408, 425, 429, 500, 502, 503, 504).
+
+Either predicate may declare a third `int $attempt` parameter — the 1-based
+number of the attempt being judged. It is passed only to closures that declare
+three or more parameters (or are variadic), so two-argument closures keep
+working unchanged:
+
+```php
+retryOnException: fn(ClientExceptionInterface $e, RequestInterface $req, int $attempt): bool
+    => $attempt === 1, // e.g. one quick retry after rotating a proxy, then give up
+```
+
+#### One policy for closures and HTTP
+
+`Retry::toPolicy()` turns the builder into the `RetryPolicy` the HTTP client
+takes, so one `Retry` configures both a `rasuvaeff/resilience` pipeline and a
+`RetryingHttpClient`:
+
+```php
+$retry = Retry::exponential(maxAttempts: 4, baseMs: 200, capMs: 2_000)->jitter(factor: 0.2);
+
+$client = new RetryingHttpClient(inner: $psr18Client, policy: $retry->toPolicy());
+```
+
+Only the attempt/delay half carries over: max attempts, backoff, jitter, sleeper
+and randomizer. Exception and result predicates, the `onRetry`/`onExhausted`
+hooks, the `stopAfterMs()` budget and the clock do **not** — pass their HTTP
+counterparts (`retryOnResponse`, `retryOnException`, `onRetry`, `onExhausted`,
+`budgetMs`, `clock`) to the client constructor. `RetryPolicy::fixed()` /
+`exponential()` / `fixedFor()` / `exponentialFor()` also accept an optional
+`jitter:` argument directly.
+
 Ready-made response predicates:
 
 | Predicate | Retries on |
@@ -212,15 +245,17 @@ Ready-made response predicates:
 | `RetryDecisions::transient()` | 408, 425, 429, 500, 502, 503, 504. |
 | `RetryDecisions::onlyIdempotent($inner)` | Wraps `$inner`; retries **only** idempotent methods (GET, HEAD, PUT, DELETE, OPTIONS, TRACE). |
 
-Constructor arguments beyond `inner` / `policy` / `retryOnResponse`:
+Constructor arguments beyond `inner` / `policy`:
 
 | Argument | Default | Effect |
 |---|---|---|
+| `retryOnResponse` | `RetryDecisions::transient()` | Predicate `fn(ResponseInterface, RequestInterface[, int $attempt]): bool`. |
+
 | `clock` | `Clock\SystemClock` | PSR-20 clock for `Retry-After` HTTP-date parsing and budget timing. |
 | `respectRetryAfter` | `true` | Honor the server's `Retry-After` header. |
 | `maxRetryAfterMs` | `300_000` | Cap on a `Retry-After` delay; `null` disables the cap. |
 | `budgetMs` | `null` | Total wall-clock budget; a retry is skipped when `elapsed + delay` would exceed it. |
-| `retryOnException` | `null` | Predicate `fn(ClientExceptionInterface, RequestInterface): bool`; `null` retries every transport exception. Non-matching exceptions are rethrown as-is. |
+| `retryOnException` | `null` | Predicate `fn(ClientExceptionInterface, RequestInterface[, int $attempt]): bool`; `null` retries every transport exception. Non-matching exceptions are rethrown as-is. |
 | `throwOnExhausted` | `false` | When `true`, throw `Http\HttpRetryExhausted` (carrying the history) on exhaustion instead of returning the last response / rethrowing the last transport exception. |
 | `onRetry` | `[]` | Callbacks `fn(HttpAttemptRecord): void` fired before each retry sleep. |
 | `onExhausted` | `[]` | Callbacks `fn(HttpRetryExhausted): void` fired on every exhaustion (`maxAttempts` or `budgetMs`); the argument carries `attempts` and the full `history`. |
@@ -251,14 +286,15 @@ still catches it.
 Each `HttpAttemptRecord` carries `attempt`, `delayMs`, `elapsedMs`, and exactly
 one of `response` / `exception` (never both, never neither). Inject a
 `Clock\FakeClock` to make `Retry-After` delays and budget timing deterministic in
-tests.
+tests, and `Sleeper\FakeSleeper::advancing($clock)` so every backoff sleep also
+moves that clock (budgets then exhaust without a real wait).
 
 ### Public API
 
 | Class | Description |
 |---|---|
 | `Retry` | Immutable retry builder and closure runner. |
-| `RetryPolicy` | Reusable policy object for decorators. |
+| `RetryPolicy` | Reusable policy object for decorators; `Retry::toPolicy()` builds one from a builder. |
 | `RetryPolicyInterface` | Read-only policy contract. |
 | `RetryExhausted` | Exception with attempts, last exception, history, and `reason`. |
 | `ExhaustionReason` | Enum: `MaxAttempts` or `TimeBudget`. |
@@ -277,7 +313,7 @@ tests.
 | `Clock\FakeClock` | Mutable PSR-20 clock for tests with `advanceMs()`. |
 | `Sleeper\SleeperInterface` | Sleep contract. |
 | `Sleeper\SystemSleeper` | `usleep()` implementation. |
-| `Sleeper\FakeSleeper` | Test sleeper recording delays. |
+| `Sleeper\FakeSleeper` | Test sleeper recording delays; `FakeSleeper::advancing(FakeClock $clock, ?\Closure $onSleep = null)` also moves a fake clock by each delay and runs an optional hook. |
 | `Randomizer\RandomizerInterface` | Float randomizer contract. |
 | `Randomizer\SystemRandomizer` | Runtime randomizer. |
 | `Randomizer\FixedRandomizer` | Deterministic test randomizer. |

@@ -33,23 +33,28 @@ final readonly class RetryPolicy implements RetryPolicyInterface
         }
     }
 
-    public static function fixed(int $delayMs = 500, int $maxAttempts = 3): self
+    public static function fixed(int $delayMs = 500, int $maxAttempts = 3, ?JitterInterface $jitter = null): self
     {
         return new self(
             maxAttempts: $maxAttempts,
             backoff: new FixedBackoff(delayMs: $delayMs),
-            jitter: new NoJitter(),
+            jitter: $jitter ?? new NoJitter(),
             sleeper: new SystemSleeper(),
             randomizer: new SystemRandomizer(),
         );
     }
 
-    public static function exponential(int $maxAttempts = 3, int $baseMs = 100, float $multiplier = 2.0, int $capMs = 30_000): self
-    {
+    public static function exponential(
+        int $maxAttempts = 3,
+        int $baseMs = 100,
+        float $multiplier = 2.0,
+        int $capMs = 30_000,
+        ?JitterInterface $jitter = null,
+    ): self {
         return new self(
             maxAttempts: $maxAttempts,
             backoff: new ExponentialBackoff(baseMs: $baseMs, multiplier: $multiplier, capMs: $capMs),
-            jitter: new NoJitter(),
+            jitter: $jitter ?? new NoJitter(),
             sleeper: new SystemSleeper(),
             randomizer: new SystemRandomizer(),
         );
@@ -69,21 +74,27 @@ final readonly class RetryPolicy implements RetryPolicyInterface
     /**
      * Duration-typed counterpart of {@see self::fixed()}.
      */
-    public static function fixedFor(Duration $delay, int $maxAttempts = 3): self
+    public static function fixedFor(Duration $delay, int $maxAttempts = 3, ?JitterInterface $jitter = null): self
     {
-        return self::fixed(delayMs: $delay->toMillis(), maxAttempts: $maxAttempts);
+        return self::fixed(delayMs: $delay->toMillis(), maxAttempts: $maxAttempts, jitter: $jitter);
     }
 
     /**
      * Duration-typed counterpart of {@see self::exponential()}.
      */
-    public static function exponentialFor(Duration $base, Duration $cap, float $multiplier = 2.0, int $maxAttempts = 3): self
-    {
+    public static function exponentialFor(
+        Duration $base,
+        Duration $cap,
+        float $multiplier = 2.0,
+        int $maxAttempts = 3,
+        ?JitterInterface $jitter = null,
+    ): self {
         return self::exponential(
             maxAttempts: $maxAttempts,
             baseMs: $base->toMillis(),
             multiplier: $multiplier,
             capMs: $cap->toMillis(),
+            jitter: $jitter,
         );
     }
 
