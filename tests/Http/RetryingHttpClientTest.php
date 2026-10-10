@@ -19,7 +19,6 @@ use Rasuvaeff\Retry\Retry;
 use Rasuvaeff\Retry\RetryPolicy;
 use Rasuvaeff\Retry\Sleeper\FakeSleeper;
 use Rasuvaeff\Retry\Sleeper\SleeperInterface;
-use Rasuvaeff\Retry\Tests\Sleeper\ClockAdvancingSleeper;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Expect;
@@ -386,7 +385,7 @@ final class RetryingHttpClientTest
     public function onExhaustedCalledWhenBudgetExceededOnResponse(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -446,7 +445,7 @@ final class RetryingHttpClientTest
     public function budgetReturnsLastResponseWhenExceeded(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -643,7 +642,7 @@ final class RetryingHttpClientTest
     public function budgetExactlyEqualToFirstDelayStillRetriesOnce(): void
     {
         $clock = new FakeClock();
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -665,7 +664,7 @@ final class RetryingHttpClientTest
     public function elapsedMsAccountsForFullSecondsAndMillis(): void
     {
         $clock = new FakeClock(now: new \DateTimeImmutable('2025-01-01T00:00:00.250000+00:00'));
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -691,7 +690,7 @@ final class RetryingHttpClientTest
     public function elapsedMsKeepsSubSecondMillisecondPrecision(): void
     {
         $clock = new FakeClock(now: new \DateTimeImmutable('2025-01-01T00:00:00.000000+00:00'));
-        $sleeper = new ClockAdvancingSleeper(clock: $clock);
+        $sleeper = FakeSleeper::advancing(clock: $clock);
         $inner = new QueueHttpClient(items: [
             new FakeResponse(statusCode: 503),
             new FakeResponse(statusCode: 503),
@@ -821,5 +820,152 @@ final class RetryingHttpClientTest
             sleeper: $sleeper,
             randomizer: $base->randomizer(),
         );
+    }
+
+    public function defaultsToTransientResponseDecision(): void
+    {
+        $sleeper = new FakeSleeper();
+        $inner = new QueueHttpClient(items: [
+            new FakeResponse(statusCode: 503),
+            new FakeResponse(statusCode: 429),
+            new FakeResponse(statusCode: 501),
+        ]);
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: $this->fixedPolicy(delayMs: 10, maxAttempts: 5, sleeper: $sleeper),
+            clock: new FakeClock(),
+        );
+
+        $response = $client->sendRequest(request: new FakeRequest());
+
+        Assert::same($response->getStatusCode(), 501);
+        Assert::same($inner->calls(), 3);
+    }
+
+    public function acceptsPolicyBuiltFromRetry(): void
+    {
+        $sleeper = new FakeSleeper();
+        $inner = new QueueHttpClient(items: [
+            new FakeResponse(statusCode: 503),
+            new FakeResponse(statusCode: 503),
+            new FakeResponse(statusCode: 200),
+        ]);
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: Retry::fixed(delayMs: 25, maxAttempts: 3)->withSleeper($sleeper)->toPolicy(),
+            clock: new FakeClock(),
+        );
+
+        Assert::same($client->sendRequest(request: new FakeRequest())->getStatusCode(), 200);
+        Assert::same($sleeper->delays(), [25, 25]);
+    }
+
+    public function passesAttemptNumberToResponsePredicateThatDeclaresIt(): void
+    {
+        $seen = [];
+        $inner = new QueueHttpClient(items: [
+            new FakeResponse(statusCode: 503),
+            new FakeResponse(statusCode: 503),
+            new FakeResponse(statusCode: 503),
+        ]);
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: $this->fixedPolicy(delayMs: 0, maxAttempts: 5, sleeper: new FakeSleeper()),
+            retryOnResponse: static function (ResponseInterface $response, RequestInterface $request, int $attempt) use (&$seen): bool {
+                $seen[] = $attempt;
+
+                return $attempt < 3;
+            },
+            clock: new FakeClock(),
+        );
+
+        $client->sendRequest(request: new FakeRequest());
+
+        Assert::same($seen, [1, 2, 3]);
+        Assert::same($inner->calls(), 3);
+    }
+
+    public function passesAttemptNumberToVariadicResponsePredicate(): void
+    {
+        $seen = [];
+        $client = new RetryingHttpClient(
+            inner: new QueueHttpClient(items: [new FakeResponse(statusCode: 503)]),
+            policy: $this->fixedPolicy(delayMs: 0, maxAttempts: 2, sleeper: new FakeSleeper()),
+            retryOnResponse: static function (mixed ...$args) use (&$seen): bool {
+                $seen[] = \count($args);
+
+                return false;
+            },
+            clock: new FakeClock(),
+        );
+
+        $client->sendRequest(request: new FakeRequest());
+
+        Assert::same($seen, [3]);
+    }
+
+    public function passesAttemptNumberToExceptionPredicateThatDeclaresIt(): void
+    {
+        $seen = [];
+        $inner = new QueueHttpClient(items: [
+            new FakeClientException(message: 'a'),
+            new FakeClientException(message: 'b'),
+            new FakeResponse(statusCode: 200),
+        ]);
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: $this->fixedPolicy(delayMs: 0, maxAttempts: 5, sleeper: new FakeSleeper()),
+            clock: new FakeClock(),
+            retryOnException: static function (ClientExceptionInterface $e, RequestInterface $r, int $attempt) use (&$seen): bool {
+                $seen[] = $attempt;
+
+                return true;
+            },
+        );
+
+        Assert::same($client->sendRequest(request: new FakeRequest())->getStatusCode(), 200);
+        Assert::same($seen, [1, 2]);
+    }
+
+    public function twoArgumentExceptionPredicateStillStopsRetries(): void
+    {
+        $inner = new QueueHttpClient(items: [new FakeClientException(message: 'a'), new FakeResponse(statusCode: 200)]);
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: $this->fixedPolicy(delayMs: 0, maxAttempts: 5, sleeper: new FakeSleeper()),
+            clock: new FakeClock(),
+            retryOnException: static fn(ClientExceptionInterface $e, RequestInterface $r): bool => false,
+        );
+
+        try {
+            $client->sendRequest(request: new FakeRequest());
+        } catch (FakeClientException) {
+        }
+
+        Assert::same($inner->calls(), 1);
+    }
+
+    public function doesNotPassAttemptToTwoArgumentPredicates(): void
+    {
+        $argCounts = [];
+        $client = new RetryingHttpClient(
+            inner: new QueueHttpClient(items: [new FakeClientException(message: 'a'), new FakeResponse(statusCode: 503)]),
+            policy: $this->fixedPolicy(delayMs: 0, maxAttempts: 2, sleeper: new FakeSleeper()),
+            retryOnResponse: static function (ResponseInterface $r, RequestInterface $q) use (&$argCounts): bool {
+                $argCounts[] = \func_num_args();
+
+                return false;
+            },
+            clock: new FakeClock(),
+            retryOnException: static function (ClientExceptionInterface $e, RequestInterface $q) use (&$argCounts): bool {
+                $argCounts[] = \func_num_args();
+
+                return true;
+            },
+        );
+
+        $client->sendRequest(request: new FakeRequest());
+
+        Assert::same($argCounts, [2, 2]);
     }
 }

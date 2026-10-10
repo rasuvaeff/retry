@@ -17,16 +17,28 @@ use Rasuvaeff\Retry\RetryPolicyInterface;
  */
 final readonly class RetryingHttpClient implements ClientInterface
 {
+    /** @var \Closure(ResponseInterface, RequestInterface, int=): bool */
+    private \Closure $retryOnResponse;
+
+    private bool $responsePredicateTakesAttempt;
+
+    private bool $exceptionPredicateTakesAttempt;
+
     /**
-     * @param \Closure(ResponseInterface, RequestInterface): bool             $retryOnResponse
-     * @param list<\Closure(HttpAttemptRecord): void>                         $onRetry
-     * @param list<\Closure(HttpRetryExhausted): void>                        $onExhausted
-     * @param null|\Closure(ClientExceptionInterface, RequestInterface): bool $retryOnException When null, all PSR-18 transport exceptions are retried.
+     * Both predicates may declare a third `int $attempt` parameter (1-based
+     * number of the attempt whose outcome is being judged); it is passed only
+     * to closures that declare at least three parameters or are variadic, so
+     * existing two-argument closures keep working unchanged.
+     *
+     * @param null|\Closure(ResponseInterface, RequestInterface, int=): bool        $retryOnResponse  When null, {@see RetryDecisions::transient()} (408, 425, 429, 500, 502-504).
+     * @param list<\Closure(HttpAttemptRecord): void>                              $onRetry
+     * @param list<\Closure(HttpRetryExhausted): void>                             $onExhausted
+     * @param null|\Closure(ClientExceptionInterface, RequestInterface, int=): bool $retryOnException When null, all PSR-18 transport exceptions are retried.
      */
     public function __construct(
         private ClientInterface $inner,
         private RetryPolicyInterface $policy,
-        private \Closure $retryOnResponse,
+        ?\Closure $retryOnResponse = null,
         private ClockInterface $clock = new SystemClock(),
         private bool $respectRetryAfter = true,
         private ?int $maxRetryAfterMs = 300_000,
@@ -35,7 +47,12 @@ final readonly class RetryingHttpClient implements ClientInterface
         private bool $throwOnExhausted = false,
         private array $onRetry = [],
         private array $onExhausted = [],
-    ) {}
+    ) {
+        $this->retryOnResponse = $retryOnResponse ?? RetryDecisions::transient();
+        $this->responsePredicateTakesAttempt = $this->takesAttempt(predicate: $this->retryOnResponse);
+        $this->exceptionPredicateTakesAttempt = $retryOnException instanceof \Closure
+            && $this->takesAttempt(predicate: $retryOnException);
+    }
 
     /**
      * A single attempt budget covers both retryable responses and PSR-18
@@ -87,7 +104,10 @@ final readonly class RetryingHttpClient implements ClientInterface
             try {
                 $response = $this->inner->sendRequest(request: $request);
 
-                if (!($this->retryOnResponse)($response, $request)) {
+                $retry = $this->responsePredicateTakesAttempt
+                    ? ($this->retryOnResponse)($response, $request, $attempt)
+                    : ($this->retryOnResponse)($response, $request);
+                if (!$retry) {
                     return $response;
                 }
 
@@ -129,8 +149,13 @@ final readonly class RetryingHttpClient implements ClientInterface
                 if ($exception instanceof HttpRetryExhausted) {
                     throw $exception;
                 }
-                if ($this->retryOnException instanceof \Closure && !($this->retryOnException)($exception, $request)) {
-                    throw $exception;
+                if ($this->retryOnException instanceof \Closure) {
+                    $retry = $this->exceptionPredicateTakesAttempt
+                        ? ($this->retryOnException)($exception, $request, $attempt)
+                        : ($this->retryOnException)($exception, $request);
+                    if (!$retry) {
+                        throw $exception;
+                    }
                 }
 
                 $elapsedMs = $this->elapsedMs(startedAt: $startedAt);
@@ -168,6 +193,13 @@ final readonly class RetryingHttpClient implements ClientInterface
         }
 
         throw new \LogicException('Unreachable HTTP retry state');
+    }
+
+    private function takesAttempt(\Closure $predicate): bool
+    {
+        $reflection = new \ReflectionFunction($predicate);
+
+        return $reflection->isVariadic() || $reflection->getNumberOfParameters() >= 3;
     }
 
     private function backoffDelayMs(int $attempt): int
