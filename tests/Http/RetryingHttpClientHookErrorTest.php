@@ -96,7 +96,8 @@ final class RetryingHttpClientHookErrorTest
 
         try {
             $client->sendRequest(request: new FakeRequest());
-            Assert::fail('Expected HttpRetryExhausted');
+
+            throw new \RuntimeException(message: 'Expected HttpRetryExhausted');
         } catch (HttpRetryExhausted $exhausted) {
             Assert::same($exhausted->attempts, 2);
             Assert::same($reported, [$hookFailure]);
@@ -117,7 +118,8 @@ final class RetryingHttpClientHookErrorTest
 
         try {
             $client->sendRequest(request: new FakeRequest());
-            Assert::fail('Expected FakeClientException');
+
+            throw new \RuntimeException(message: 'Expected FakeClientException');
         } catch (FakeClientException $exception) {
             Assert::same($exception, $failure);
         }
@@ -145,7 +147,8 @@ final class RetryingHttpClientHookErrorTest
 
         try {
             $client->sendRequest(request: new FakeRequest());
-            Assert::fail('Expected ContextCancelledException');
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
         } catch (ContextCancelledException $exception) {
             Assert::same($exception, $cancelled);
             Assert::same($inner->calls(), 1);

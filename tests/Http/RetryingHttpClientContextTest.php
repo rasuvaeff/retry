@@ -40,7 +40,8 @@ final class RetryingHttpClientContextTest
 
         try {
             $client->sendRequest(request: new FakeRequest());
-            Assert::fail('Expected ContextCancelledException');
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
         } catch (ContextCancelledException) {
             Assert::same($inner->calls(), 0);
         }
@@ -68,7 +69,8 @@ final class RetryingHttpClientContextTest
 
         try {
             $client->sendRequest(request: new FakeRequest());
-            Assert::fail('Expected ContextCancelledException');
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
         } catch (ContextCancelledException) {
             Assert::same($inner->calls(), 1);
             Assert::same($sleeper->delays(), [50]);
@@ -98,7 +100,8 @@ final class RetryingHttpClientContextTest
 
         try {
             $client->sendRequest(request: new FakeRequest());
-            Assert::fail('Expected ContextExpiredException');
+
+            throw new \RuntimeException(message: 'Expected ContextExpiredException');
         } catch (ContextExpiredException) {
             Assert::same($inner->calls(), 1);
             Assert::same($sleeper->delays(), [50, 30]);
@@ -149,5 +152,45 @@ final class RetryingHttpClientContextTest
         );
 
         Assert::same($client->sendRequest(request: new FakeRequest())->getStatusCode(), 201);
+    }
+
+    public function retryableResponseIsLostWhenTheContextEndsInFlight(): void
+    {
+        [$context, $controller] = Context::background(timeSource: new FakeTimeSource())->withCancel();
+        $inner = new class ($controller) implements ClientInterface {
+            public int $calls = 0;
+
+            public function __construct(
+                private readonly ContextController $controller,
+            ) {}
+
+            #[\Override]
+            public function sendRequest(RequestInterface $request): ResponseInterface
+            {
+                $this->calls++;
+                $this->controller->cancel();
+
+                return new FakeResponse(statusCode: 503);
+            }
+        };
+        $retries = 0;
+        $client = new RetryingHttpClient(
+            inner: $inner,
+            policy: Retry::fixed(delayMs: 10, maxAttempts: 3)->withSleeper(sleeper: new FakeSleeper())->toPolicy(),
+            clock: new FakeClock(),
+            onRetry: [static function () use (&$retries): void {
+                $retries++;
+            }],
+            context: $context,
+        );
+
+        try {
+            $client->sendRequest(request: new FakeRequest());
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
+        } catch (ContextCancelledException) {
+            Assert::same($inner->calls, 1);
+            Assert::same($retries, 1);
+        }
     }
 }

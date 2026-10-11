@@ -306,10 +306,11 @@ final readonly class Retry
      * The attempt/delay half of this builder as a {@see RetryPolicy} for
      * {@see Http\RetryingHttpClient}: max attempts, backoff, jitter, sleeper
      * and randomizer carry over. Nothing else does — `retryOn`/`retryIf`/
-     * `stopIf`/`retryIfResult` and the `onRetry`/`onExhausted` hooks have
-     * HTTP-specific counterparts on the client (`retryOnResponse`,
-     * `retryOnException`, its own hooks), and the `stopAfterMs()` budget and
-     * clock are client constructor arguments (`budgetMs`, `clock`).
+     * `stopIf`/`retryIfResult` and the `onRetry`/`onExhausted`/`onHookError`
+     * hooks have HTTP-specific counterparts on the client (`retryOnResponse`,
+     * `retryOnException`, its own hooks), and the `stopAfterMs()` budget, the
+     * clock and the context are client constructor arguments (`budgetMs`,
+     * `clock`, `context`).
      */
     public function toPolicy(): RetryPolicy
     {

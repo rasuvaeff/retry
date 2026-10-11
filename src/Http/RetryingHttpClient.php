@@ -85,7 +85,9 @@ final readonly class RetryingHttpClient implements ClientInterface
      * {@see ContextException} before the next attempt or during a sleep. That
      * exception deliberately escapes the PSR-18 `ClientExceptionInterface`
      * contract: it is the caller's own cancellation, not a transport failure.
-     * A response already received is never discarded because of the context.
+     * A final response (not retryable, or from the last attempt) is always
+     * returned; when a retry is pending, the context ending throws instead,
+     * after `onRetry` has fired for that attempt.
      *
      * `onRetry`/`onExhausted` hooks are best-effort: an exception from a hook
      * goes to `onHookError` and the loop continues (a `ContextException` from a

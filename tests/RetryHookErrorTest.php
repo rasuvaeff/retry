@@ -64,7 +64,8 @@ final class RetryHookErrorTest
                 ->run(operation: static function () use ($operationFailure): never {
                     throw $operationFailure;
                 });
-            Assert::fail('Expected RetryExhausted');
+
+            throw new \RuntimeException(message: 'Expected RetryExhausted');
         } catch (RetryExhausted $exhausted) {
             Assert::same($exhausted->lastException, $operationFailure);
             Assert::same($reported, [$hookFailure]);
@@ -144,7 +145,8 @@ final class RetryHookErrorTest
 
                     throw new \RuntimeException(message: 'down');
                 });
-            Assert::fail('Expected ContextCancelledException');
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
         } catch (ContextCancelledException $exception) {
             Assert::same($exception, $cancelled);
             Assert::same($calls, 1);

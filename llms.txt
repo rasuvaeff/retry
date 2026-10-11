@@ -79,7 +79,8 @@ composer require rasuvaeff/retry
 - `RetryingHttpClient` `context:` (`Rasuvaeff\Context\Context`) is checked before
   every attempt and between 50 ms sleep slices; its `ContextException` escapes
   PSR-18 on purpose and is never retried. A long `Retry-After` sleep ends at the
-  context deadline. A response already received is always returned.
+  context deadline. A FINAL response (not retryable / last attempt) is always
+  returned; with a retry pending, the ended context throws after `onRetry`.
 - `retryAfterJitter: ?JitterInterface` spreads a `Retry-After` delay UPWARDS only
   (the jitter's downward spread is mirrored: `FullJitter` -> `[d, 2d]`), then
   `maxRetryAfterMs` caps it. Default null = server value as-is.
@@ -87,9 +88,10 @@ composer require rasuvaeff/retry
   predicate may declare a 3rd `int $attempt` (1-based); it is passed only to
   closures with >= 3 params or variadic, so 2-arg closures are unchanged.
 - `Retry::toPolicy(): RetryPolicy` carries maxAttempts/backoff/jitter/sleeper/
-  randomizer ONLY. Predicates, hooks, `stopAfterMs` budget and clock do not
-  carry over — pass `retryOnResponse`/`retryOnException`/`onRetry`/
-  `onExhausted`/`budgetMs`/`clock` to `RetryingHttpClient` yourself.
+  randomizer ONLY. Predicates, hooks (incl. `onHookError`), `stopAfterMs`
+  budget, clock and context do not carry over — pass `retryOnResponse`/
+  `retryOnException`/`onRetry`/`onExhausted`/`onHookError`/`budgetMs`/`clock`/
+  `context` to `RetryingHttpClient` yourself.
 - `RetryPolicy::fixed()/exponential()/fixedFor()/exponentialFor()` take an
   optional trailing `?JitterInterface $jitter` (default `NoJitter`).
 - `FakeSleeper::advancing(FakeClock $clock, ?\Closure $onSleep = null)`: each

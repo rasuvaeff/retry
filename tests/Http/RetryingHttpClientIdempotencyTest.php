@@ -113,7 +113,8 @@ final class RetryingHttpClientIdempotencyTest
 
         try {
             $client->sendRequest(request: new FakeRequest(method: 'POST'));
-            Assert::fail('Expected ContextCancelledException');
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
         } catch (ContextCancelledException) {
             Assert::same($inner->calls(), 0);
         }

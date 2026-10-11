@@ -276,9 +276,10 @@ $client = new RetryingHttpClient(inner: $psr18Client, policy: $retry->toPolicy()
 
 Переносится только часть «попытки и задержки»: число попыток, backoff, jitter,
 sleeper и randomizer. Предикаты исключений и результата, хуки
-`onRetry`/`onExhausted`, бюджет `stopAfterMs()` и часы **не** переносятся —
-передайте их HTTP-аналоги (`retryOnResponse`, `retryOnException`, `onRetry`,
-`onExhausted`, `budgetMs`, `clock`) в конструктор клиента. `RetryPolicy::fixed()` /
+`onRetry`/`onExhausted`/`onHookError`, бюджет `stopAfterMs()`, часы и контекст
+**не** переносятся — передайте их HTTP-аналоги (`retryOnResponse`,
+`retryOnException`, `onRetry`, `onExhausted`, `onHookError`, `budgetMs`, `clock`,
+`context`) в конструктор клиента. `RetryPolicy::fixed()` /
 `exponential()` / `fixedFor()` / `exponentialFor()` также принимают
 необязательный аргумент `jitter:`.
 
@@ -335,8 +336,10 @@ backoff (`Retry-After` недоступен). Передайте `respectRetryAf
 `Retry-After`: сон идёт 50-миллисекундными отрезками и заканчивается на дедлайне
 контекста. Это исключение намеренно выходит за контракт PSR-18
 `ClientExceptionInterface`: это отмена со стороны вызывающего, а не сбой
-транспорта. Уже полученный ответ возвращается, даже если контекст закончился,
-пока запрос был в пути.
+транспорта. Финальный ответ (неповторяемый или от последней попытки) всегда
+возвращается, даже если контекст закончился, пока запрос был в пути; если же
+впереди повтор, закончившийся контекст бросает исключение — уже после того, как
+для этой попытки сработал `onRetry`.
 
 Хуки `onRetry`/`onExhausted` работают по принципу best-effort, как и в `Retry`:
 исключение хука уходит в `onHookError`, цикл продолжается.
@@ -413,6 +416,7 @@ backoff до `capMs` (по умолчанию 30 с) либо серверный
 | Рычаг | Действие |
 |---|---|
 | Ограничить серверные задержки | Снизьте `maxRetryAfterMs` (до нескольких секунд), чтобы враждебный/большой `Retry-After` не прибивал воркер; держите `capMs` и `budgetMs` скромными. |
+| Ограничить сон дедлайном запроса | Подключите контекст `rasuvaeff/context` (`Retry::withContext()` или `context:` у `RetryingHttpClient`): сон идёт 50-миллисекундными отрезками и заканчивается на дедлайне или при отмене. |
 | Снести длинные повторы с горячего пути | Выполняйте повторы со значимым backoff из очереди / RoadRunner Jobs-воркера, а не из синхронного request-воркера. |
 | Кооперативный сон | Внедрите неблокирующий `SleeperInterface` через `Retry::withSleeper()` (ядро) либо sleeper политики (HTTP), если рантайм предлагает кооперативное планирование (например, sleep корутины Swoole). |
 

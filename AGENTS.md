@@ -115,9 +115,11 @@ make release-check
 - Context: `Retry::withContext()` and `RetryingHttpClient`'s `context:` share
   `Sleeper\ContextAwareSleeper` (`@internal`, 50 ms slices). Without a context
   the delay is ONE `sleepMs()` call (tests assert that). A `ContextException`
-  is never retried; on the HTTP path it deliberately escapes PSR-18. A response
-  already received is never discarded because the context ended — the context
-  is checked only before an attempt and inside the sleep.
+  is never retried; on the HTTP path it deliberately escapes PSR-18. The context
+  is checked only before an attempt and inside the sleep, so a FINAL response
+  (not retryable / last attempt) is always returned, while a retryable response
+  or transport exception is lost to the `ContextException` once `onRetry` has
+  fired (same as `Retry::run()`).
 - Hooks (`onRetry`/`onExhausted`) are best-effort on both paths: `callHook()`
   rethrows `ContextException` and sends every other `\Throwable` to the
   `onHookError` callbacks, which are NOT guarded. Never fall back to

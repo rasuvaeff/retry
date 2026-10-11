@@ -271,10 +271,11 @@ $client = new RetryingHttpClient(inner: $psr18Client, policy: $retry->toPolicy()
 ```
 
 Only the attempt/delay half carries over: max attempts, backoff, jitter, sleeper
-and randomizer. Exception and result predicates, the `onRetry`/`onExhausted`
-hooks, the `stopAfterMs()` budget and the clock do **not** — pass their HTTP
-counterparts (`retryOnResponse`, `retryOnException`, `onRetry`, `onExhausted`,
-`budgetMs`, `clock`) to the client constructor. `RetryPolicy::fixed()` /
+and randomizer. Exception and result predicates, the `onRetry`/`onExhausted`/
+`onHookError` hooks, the `stopAfterMs()` budget, the clock and the context do
+**not** — pass their HTTP counterparts (`retryOnResponse`, `retryOnException`,
+`onRetry`, `onExhausted`, `onHookError`, `budgetMs`, `clock`, `context`) to the
+client constructor. `RetryPolicy::fixed()` /
 `exponential()` / `fixedFor()` / `exponentialFor()` also accept an optional
 `jitter:` argument directly.
 
@@ -330,8 +331,10 @@ With a `context`, a cancelled or expired context throws its `ContextException`
 before the next attempt or during a sleep, also out of a long `Retry-After`
 wait: the sleep runs in 50 ms slices and ends at the context deadline. The
 exception deliberately escapes the PSR-18 `ClientExceptionInterface` contract —
-it is the caller's own cancellation, not a transport failure. A response that
-has already arrived is returned even if the context ended while it was in flight.
+it is the caller's own cancellation, not a transport failure. A final response
+(not retryable, or from the last attempt) is always returned, even if the
+context ended while it was in flight; when a retry is pending, the ended
+context throws instead, after `onRetry` has fired for that attempt.
 
 The `onRetry`/`onExhausted` hooks are best-effort, as on `Retry`: a throwing
 hook goes to `onHookError` and the loop continues.
@@ -408,6 +411,7 @@ Recommendations:
 | Lever | Action |
 |---|---|
 | Cap server-driven delays | Lower `maxRetryAfterMs` (e.g. a few seconds) so a hostile/large `Retry-After` cannot pin a worker; keep `capMs` and `budgetMs` modest. |
+| Bound sleeps by the request deadline | Attach a `rasuvaeff/context` context (`Retry::withContext()`, or `context:` on `RetryingHttpClient`): the sleep runs in 50 ms slices and ends at the deadline or on cancellation. |
 | Move long retries off the hot path | Run retries with meaningful backoff from a queue / RoadRunner Jobs worker, not the synchronous request worker. |
 | Cooperative sleep | Inject a non-blocking `SleeperInterface` via `Retry::withSleeper()` (core) or the policy's sleeper (HTTP) when your runtime offers cooperative scheduling (e.g. a Swoole coroutine sleep). |
 

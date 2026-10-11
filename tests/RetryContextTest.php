@@ -36,7 +36,8 @@ final class RetryContextTest
 
                     return 'ok';
                 });
-            Assert::fail('Expected ContextCancelledException');
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
         } catch (ContextCancelledException) {
             Assert::same($calls, 0);
         }
@@ -57,7 +58,8 @@ final class RetryContextTest
 
                     throw $thrown;
                 });
-            Assert::fail('Expected ContextCancelledException');
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
         } catch (ContextCancelledException $exception) {
             Assert::same($exception, $thrown);
             Assert::same($calls, 1);
@@ -105,7 +107,8 @@ final class RetryContextTest
 
                     throw new \RuntimeException(message: 'down');
                 });
-            Assert::fail('Expected ContextCancelledException');
+
+            throw new \RuntimeException(message: 'Expected ContextCancelledException');
         } catch (ContextCancelledException) {
             Assert::same($calls, 1);
             Assert::same($sleeper->delays(), [50]);
@@ -133,7 +136,8 @@ final class RetryContextTest
 
                     throw new \RuntimeException(message: 'down');
                 });
-            Assert::fail('Expected ContextExpiredException');
+
+            throw new \RuntimeException(message: 'Expected ContextExpiredException');
         } catch (ContextExpiredException) {
             Assert::same($calls, 1);
             Assert::same($sleeper->delays(), [50, 30]);
