@@ -63,7 +63,7 @@
         }
     },
     "scripts": {
-        "bc-check": "roave-backward-compatibility-check",
+        "bc-check": "sh -c 'git config --global --add safe.directory \"*\" 2>/dev/null || true; roave-backward-compatibility-check \"$@\"' --",
         "bench": "testo --suite=Benchmarks -vv",
         "build": [
             "@composer validate --strict",
