@@ -1151,8 +1151,11 @@ final class RetryTest
 
         // The cap is the reason a caller can bound a retry budget at all, and
         // the monotonicity is what makes exponential backoff back off.
+        // Measured share of "still climbing" at runs: 300 is ~26% (23-33% over
+        // a dozen local runs, 18.7% once in CI): a 20% gate reddened clean
+        // runs, so the gate sits well below the observed spread.
         Classify::cover($delay >= $capMs, 'already at the cap', 20.0);
-        Classify::cover($delay < $capMs, 'still climbing', 20.0);
+        Classify::cover($delay < $capMs, 'still climbing', 10.0);
         Classify::when($step === 0, 'the same attempt twice');
 
         Assert::true($delay >= 0 && $delay <= $capMs);
