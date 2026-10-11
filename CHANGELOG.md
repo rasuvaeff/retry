@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.1 — 2026-10-11
+
+- Allow `rasuvaeff/context` ^0.2 (`^0.1 || ^0.2`), so the package installs next to `rasuvaeff/context-http` 0.2. No code changes: the package does not use `Context::onTerminate()`, the only API change in context 0.2.
+
 ## 1.6.0 — 2026-10-11
 
 - Retry budgets (`stopAfterMs()`, `RetryingHttpClient` `budgetMs`) are measured with the monotonic `hrtime()` when the clock is the default `Clock\SystemClock`, so an NTP step or manual clock change no longer shrinks or inflates the budget; `AttemptRecord::$elapsedMs` / `HttpAttemptRecord::$elapsedMs` use the same source. Any other clock (e.g. `FakeClock` via `withClock()`) is still read as-is, and `Retry-After` HTTP-dates are still parsed with the PSR-20 clock (#32).
