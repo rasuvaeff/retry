@@ -19,13 +19,10 @@ use Psr\Clock\ClockInterface;
 final readonly class ElapsedTimer
 {
     /**
-     * @param \Closure(): int $nanoseconds
+     * @param \Closure(): int $elapsedMs
      */
     private function __construct(
-        private ?ClockInterface $clock,
-        private ?\DateTimeImmutable $startedAt,
-        private int $startedNs,
-        private \Closure $nanoseconds,
+        private \Closure $elapsedMs,
     ) {}
 
     /**
@@ -33,34 +30,32 @@ final readonly class ElapsedTimer
      */
     public static function start(ClockInterface $clock, ?\Closure $nanoseconds = null): self
     {
-        $nanoseconds ??= static fn(): int => (int) hrtime(as_number: true);
-
         if ($clock instanceof SystemClock) {
-            return new self(clock: null, startedAt: null, startedNs: $nanoseconds(), nanoseconds: $nanoseconds);
+            $nanoseconds ??= static fn(): int => hrtime(as_number: true);
+            $startedNs = $nanoseconds();
+
+            return new self(elapsedMs: static fn(): int => intdiv($nanoseconds() - $startedNs, 1_000_000));
         }
 
-        return new self(clock: $clock, startedAt: $clock->now(), startedNs: 0, nanoseconds: $nanoseconds);
+        $startedAt = $clock->now();
+
+        return new self(elapsedMs: static function () use ($clock, $startedAt): int {
+            $now = $clock->now();
+
+            return ($now->getTimestamp() - $startedAt->getTimestamp()) * 1000
+                + (int) (((int) $now->format('u') - (int) $startedAt->format('u')) / 1000);
+        });
     }
 
     /**
+     * Clamped at zero: a clock stepping backwards would otherwise produce a
+     * negative elapsed, and the attempt record's constructor would throw from
+     * inside the retry machinery itself - losing the operation's own exception.
+     *
      * @return int<0, max>
      */
     public function elapsedMs(): int
     {
-        if (!$this->clock instanceof ClockInterface || !$this->startedAt instanceof \DateTimeImmutable) {
-            return max(0, intdiv(($this->nanoseconds)() - $this->startedNs, 1_000_000));
-        }
-
-        $now = $this->clock->now();
-
-        // Clamped at zero: a clock stepping backwards would otherwise produce
-        // a negative elapsed, and the attempt record's constructor would throw
-        // from inside the retry machinery itself - losing the operation's own
-        // exception.
-        return max(
-            0,
-            ($now->getTimestamp() - $this->startedAt->getTimestamp()) * 1000
-                + (int) (((int) $now->format('u') - (int) $this->startedAt->format('u')) / 1000),
-        );
+        return max(0, ($this->elapsedMs)());
     }
 }
