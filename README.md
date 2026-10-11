@@ -21,9 +21,9 @@ a PSR-18 HTTP client decorator that honors `Retry-After`.
 - PHP 8.3+
 - `psr/clock` ^1.0
 - `psr/http-client` ^1.0
-- `psr/http-message` ^1.0 || ^2.0
+- `psr/http-message` ^2.0
 - `rasuvaeff/duration` ^1.0
-- `rasuvaeff/context` ^1.0
+- `rasuvaeff/context` ^0.1
 
 ## Installation
 

@@ -25,8 +25,9 @@ clock/sleeper/randomizer, хуками наблюдаемости и декор�
 - PHP 8.3+
 - `psr/clock` ^1.0
 - `psr/http-client` ^1.0
-- `psr/http-message` ^1.0 || ^2.0
+- `psr/http-message` ^2.0
 - `rasuvaeff/duration` ^1.0
+- `rasuvaeff/context` ^0.1
 
 ## Установка
 
@@ -151,6 +152,20 @@ Retry::new()
 `RetryExhausted::reason` — это `ExhaustionReason` (`MaxAttempts` или `TimeBudget`),
 объясняющий, почему цикл сдался. Терминальная `AttemptRecord` имеет `delayMs` =
 `null` (после неё нет сна).
+
+### Кооперативный контекст
+
+Подключите контекст запроса или задачи через `withContext()`. Контекст
+проверяется перед каждой попыткой и между 50-миллисекундными отрезками сна;
+исключения контекста сразу останавливают цикл и никогда не повторяются.
+
+```php
+use Rasuvaeff\Context\Context;
+
+[$context, $controller] = Context::background()->withTimeout(2.0);
+$value = Retry::new()->withContext($context)->run(fn(): string => flakyOperation());
+$controller->cancel();
+```
 
 ### Интеграция с Result
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- README requirements now match `composer.json` (`rasuvaeff/context` ^0.1, `psr/http-message` ^2.0); `README.ru.md` gains the missing cooperative-context section (#36).
+
 ## 1.4.0 — 2026-10-10
 
 - Added `Retry::withContext()`: cooperative cancellation and deadline checks
