@@ -7,6 +7,7 @@ namespace Rasuvaeff\Retry\Tests\Http;
 use Rasuvaeff\Retry\Http\RetryDecisions;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataProvider;
 use Testo\Test;
 
 #[Test]
@@ -97,5 +98,21 @@ final class RetryDecisionsTest
         $predicate = RetryDecisions::onlyIdempotent(RetryDecisions::serverErrors());
 
         Assert::true($predicate(new FakeResponse(statusCode: 503), new FakeRequest(method: 'get')));
+    }
+
+    #[DataProvider('isIdempotentProvider')]
+    public function isIdempotentClassifiesMethods(string $method, bool $expected): void
+    {
+        Assert::same(RetryDecisions::isIdempotent(request: new FakeRequest(method: $method)), $expected);
+    }
+
+    public static function isIdempotentProvider(): iterable
+    {
+        foreach (['GET', 'HEAD', 'PUT', 'DELETE', 'OPTIONS', 'TRACE', 'get', 'Delete'] as $method) {
+            yield $method => [$method, true];
+        }
+        foreach (['POST', 'PATCH', 'CONNECT', 'post'] as $method) {
+            yield $method => [$method, false];
+        }
     }
 }

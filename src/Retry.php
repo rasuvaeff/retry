@@ -36,6 +36,7 @@ final readonly class Retry
      * @param list<\Closure(mixed): bool> $retryIfResult
      * @param list<\Closure(AttemptRecord): void> $onRetry
      * @param list<\Closure(RetryExhausted): void> $onExhausted
+     * @param list<\Closure(\Throwable): void> $onHookError
      */
     private function __construct(
         private int $maxAttempts,
@@ -52,6 +53,7 @@ final readonly class Retry
         private array $retryIfResult,
         private array $onRetry,
         private array $onExhausted,
+        private array $onHookError,
     ) {
         if ($maxAttempts < 1) {
             throw new \InvalidArgumentException('Max attempts must be greater than or equal to 1');
@@ -75,6 +77,7 @@ final readonly class Retry
             retryIfResult: [],
             onRetry: [],
             onExhausted: [],
+            onHookError: [],
         );
     }
 
@@ -259,6 +262,20 @@ final readonly class Retry
         return $this->copy(onExhausted: [...$this->onExhausted, $callback]);
     }
 
+    /**
+     * `onRetry`/`onExhausted` hooks are best-effort: a hook that throws does
+     * not abort the loop or replace the operation's exception. The hook's
+     * exception goes to every `onHookError` callback instead (and is dropped
+     * when there are none). A {@see ContextException} thrown by a hook is
+     * cancellation and propagates. `onHookError` callbacks are not guarded.
+     *
+     * @param \Closure(\Throwable): void $callback
+     */
+    public function onHookError(\Closure $callback): self
+    {
+        return $this->copy(onHookError: [...$this->onHookError, $callback]);
+    }
+
     public function withSleeper(SleeperInterface $sleeper): self
     {
         return $this->copy(sleeper: $sleeper);
@@ -395,7 +412,7 @@ final readonly class Retry
                 );
                 $history[] = $record;
                 foreach ($this->onRetry as $callback) {
-                    $callback($record);
+                    $this->callHook(hook: $callback, argument: $record);
                 }
 
                 $sleeper->sleepMs(ms: $delayMs);
@@ -471,10 +488,29 @@ final readonly class Retry
             reason: $reason,
         );
         foreach ($this->onExhausted as $callback) {
-            $callback($exception);
+            $this->callHook(hook: $callback, argument: $exception);
         }
 
         return $exception;
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param \Closure(T): void $hook
+     * @param T $argument
+     */
+    private function callHook(\Closure $hook, object $argument): void
+    {
+        try {
+            $hook($argument);
+        } catch (ContextException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            foreach ($this->onHookError as $callback) {
+                $callback($exception);
+            }
+        }
     }
 
     /**
@@ -484,6 +520,7 @@ final readonly class Retry
      * @param list<\Closure(mixed): bool>|null $retryIfResult
      * @param list<\Closure(AttemptRecord): void>|null $onRetry
      * @param list<\Closure(RetryExhausted): void>|null $onExhausted
+     * @param list<\Closure(\Throwable): void>|null $onHookError
      */
     private function copy(
         ?int $maxAttempts = null,
@@ -500,6 +537,7 @@ final readonly class Retry
         ?array $retryIfResult = null,
         ?array $onRetry = null,
         ?array $onExhausted = null,
+        ?array $onHookError = null,
     ): self {
         return new self(
             maxAttempts: $maxAttempts ?? $this->maxAttempts,
@@ -516,6 +554,7 @@ final readonly class Retry
             retryIfResult: $retryIfResult ?? $this->retryIfResult,
             onRetry: $onRetry ?? $this->onRetry,
             onExhausted: $onExhausted ?? $this->onExhausted,
+            onHookError: $onHookError ?? $this->onHookError,
         );
     }
 }

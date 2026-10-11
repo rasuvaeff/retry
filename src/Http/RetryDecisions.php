@@ -27,11 +27,17 @@ final readonly class RetryDecisions
      */
     public static function onlyIdempotent(\Closure $inner): \Closure
     {
-        return static fn(ResponseInterface $response, RequestInterface $request): bool => in_array(
-            strtoupper($request->getMethod()),
-            self::IDEMPOTENT_METHODS,
-            strict: true,
-        ) && $inner($response);
+        return static fn(ResponseInterface $response, RequestInterface $request): bool => self::isIdempotent(request: $request)
+            && $inner($response);
+    }
+
+    /**
+     * True for the idempotent request methods GET, HEAD, PUT, DELETE, OPTIONS
+     * and TRACE (case-insensitive).
+     */
+    public static function isIdempotent(RequestInterface $request): bool
+    {
+        return in_array(strtoupper($request->getMethod()), self::IDEMPOTENT_METHODS, strict: true);
     }
 
     /**
