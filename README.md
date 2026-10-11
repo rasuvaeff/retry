@@ -129,9 +129,14 @@ $value = Retry::new()
 
 ### Time budget
 
-`stopAfterMs()` caps the total wall-clock time spent retrying. Attempt 1 always
+`stopAfterMs()` caps the total time spent retrying. Attempt 1 always
 runs; a follow-up attempt is skipped when `elapsed + nextDelay` would exceed the
 budget, so unused sleep time is not added.
+
+With the default `Clock\SystemClock`, elapsed time is measured with the
+monotonic `hrtime()`, so an NTP step or a manual clock change neither shrinks
+nor inflates the budget. Any other clock passed to `withClock()` (a
+`Clock\FakeClock` in tests, a custom PSR-20 clock) is read as-is.
 
 ```php
 Retry::new()
@@ -296,10 +301,10 @@ Constructor arguments beyond `inner` / `policy`:
 | Argument | Default | Effect |
 |---|---|---|
 | `retryOnResponse` | `RetryDecisions::transient()` | Predicate `fn(ResponseInterface, RequestInterface[, int $attempt]): bool`. |
-| `clock` | `Clock\SystemClock` | PSR-20 clock for `Retry-After` HTTP-date parsing and budget timing. |
+| `clock` | `Clock\SystemClock` | PSR-20 clock for `Retry-After` HTTP-date parsing; budget timing uses monotonic `hrtime()` with `SystemClock` and reads any other clock as-is. |
 | `respectRetryAfter` | `true` | Honor the server's `Retry-After` header. |
 | `maxRetryAfterMs` | `300_000` | Cap on a `Retry-After` delay; `null` disables the cap. |
-| `budgetMs` | `null` | Total wall-clock budget; a retry is skipped when `elapsed + delay` would exceed it. |
+| `budgetMs` | `null` | Total time budget; a retry is skipped when `elapsed + delay` would exceed it. |
 | `retryOnException` | `null` | Predicate `fn(ClientExceptionInterface, RequestInterface[, int $attempt]): bool`; `null` retries every transport exception. Non-matching exceptions are rethrown as-is. |
 | `throwOnExhausted` | `false` | When `true`, throw `Http\HttpRetryExhausted` (carrying the history) on exhaustion instead of returning the last response / rethrowing the last transport exception. |
 | `onRetry` | `[]` | Callbacks `fn(HttpAttemptRecord): void` fired before each retry sleep. |

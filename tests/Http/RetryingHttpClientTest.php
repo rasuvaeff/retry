@@ -9,6 +9,7 @@ use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Rasuvaeff\Retry\Clock\ElapsedTimer;
 use Rasuvaeff\Retry\Clock\FakeClock;
 use Rasuvaeff\Retry\Http\HttpAttemptRecord;
 use Rasuvaeff\Retry\Http\HttpRetryExhausted;
@@ -26,6 +27,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(RetryingHttpClient::class)]
+#[Covers(ElapsedTimer::class)]
 #[Covers(HttpAttemptRecord::class)]
 #[Covers(HttpRetryExhausted::class)]
 #[Covers(RetryPolicy::class)]

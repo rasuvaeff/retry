@@ -12,6 +12,7 @@ use Rasuvaeff\PropertyTesting\Property;
 use Rasuvaeff\Retry\AttemptRecord;
 use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\FixedBackoff;
+use Rasuvaeff\Retry\Clock\ElapsedTimer;
 use Rasuvaeff\Retry\Clock\FakeClock;
 use Rasuvaeff\Retry\ExhaustionReason;
 use Rasuvaeff\Retry\Jitter\JitterMode;
@@ -27,6 +28,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(Retry::class)]
+#[Covers(ElapsedTimer::class)]
 #[Covers(RetryExhausted::class)]
 #[Covers(AttemptRecord::class)]
 #[Covers(ExhaustionReason::class)]

@@ -134,9 +134,14 @@ $value = Retry::new()
 
 ### Временной бюджет
 
-`stopAfterMs()` ограничивает суммарное wall-clock-время на повторы. Попытка 1
+`stopAfterMs()` ограничивает суммарное время на повторы. Попытка 1
 выполняется всегда; следующая пропускается, если `elapsed + nextDelay` превысит
 бюджет, поэтому неиспользованное время сна не приплюсовывается.
+
+С часами по умолчанию `Clock\SystemClock` прошедшее время измеряется монотонным
+`hrtime()`, поэтому шаг NTP или ручная перестановка часов не сокращают и не
+раздувают бюджет. Любые другие часы, переданные в `withClock()` (`Clock\FakeClock`
+в тестах, свои часы PSR-20), читаются как есть.
 
 ```php
 Retry::new()
@@ -300,10 +305,10 @@ sleeper и randomizer. Предикаты исключений и результ
 | Аргумент | По умолчанию | Эффект |
 |---|---|---|
 | `retryOnResponse` | `RetryDecisions::transient()` | Предикат `fn(ResponseInterface, RequestInterface[, int $attempt]): bool`. |
-| `clock` | `Clock\SystemClock` | Часы PSR-20 для разбора HTTP-date в `Retry-After` и тайминга бюджета. |
+| `clock` | `Clock\SystemClock` | Часы PSR-20 для разбора HTTP-date в `Retry-After`; бюджет с `SystemClock` считается по монотонному `hrtime()`, любые другие часы читаются как есть. |
 | `respectRetryAfter` | `true` | Уважать заголовок `Retry-After` от сервера. |
 | `maxRetryAfterMs` | `300_000` | Верхняя граница задержки из `Retry-After`; `null` отключает ограничение. |
-| `budgetMs` | `null` | Суммарный wall-clock-бюджет; повтор пропускается, когда `elapsed + delay` превышает его. |
+| `budgetMs` | `null` | Суммарный бюджет времени; повтор пропускается, когда `elapsed + delay` превышает его. |
 | `retryOnException` | `null` | Предикат `fn(ClientExceptionInterface, RequestInterface[, int $attempt]): bool`; `null` повторяет каждое транспортное исключение. Несовпадающие исключения пробрасываются как есть. |
 | `throwOnExhausted` | `false` | При `true` выбрасывает `Http\HttpRetryExhausted` (с историей) при исчерпании вместо возврата последнего ответа / проброса последнего транспортного исключения. |
 | `onRetry` | `[]` | Колбэки `fn(HttpAttemptRecord): void`, срабатывают перед сном каждой повторной попытки. |

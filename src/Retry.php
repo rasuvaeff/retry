@@ -12,6 +12,7 @@ use Rasuvaeff\Retry\BackoffStrategy\BackoffStrategyInterface;
 use Rasuvaeff\Retry\BackoffStrategy\ExponentialBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\FixedBackoff;
 use Rasuvaeff\Retry\BackoffStrategy\ImmediateBackoff;
+use Rasuvaeff\Retry\Clock\ElapsedTimer;
 use Rasuvaeff\Retry\Clock\SystemClock;
 use Rasuvaeff\Retry\Jitter\AdditiveJitter;
 use Rasuvaeff\Retry\Jitter\FullJitter;
@@ -343,7 +344,7 @@ final readonly class Retry
     public function run(\Closure $operation): mixed
     {
         $history = [];
-        $startedAt = $this->clock->now();
+        $timer = ElapsedTimer::start(clock: $this->clock);
         $sleeper = $this->context instanceof Context
             ? new ContextAwareSleeper(inner: $this->sleeper, context: $this->context)
             : $this->sleeper;
@@ -368,7 +369,7 @@ final readonly class Retry
                     throw $exception;
                 }
 
-                $elapsedMs = $this->elapsedMs(startedAt: $startedAt);
+                $elapsedMs = $timer->elapsedMs();
                 $isLastAttempt = $attempt >= $this->maxAttempts;
 
                 if ($isLastAttempt) {
@@ -458,22 +459,6 @@ final readonly class Retry
             delayMs: $delayMs,
             attempt: $attempt,
             randomizer: $this->randomizer,
-        );
-    }
-
-    private function elapsedMs(\DateTimeImmutable $startedAt): int
-    {
-        $now = $this->clock->now();
-
-        // Clamped at zero: a backwards clock step (NTP correction) would
-        // otherwise produce a negative elapsed, and AttemptRecord's
-        // constructor would throw from inside the retry machinery itself -
-        // losing the operation's own exception. Slightly under-counting the
-        // budget after a step is the right degradation for a retry primitive.
-        return max(
-            0,
-            ($now->getTimestamp() - $startedAt->getTimestamp()) * 1000
-                + (int) (((int) $now->format('u') - (int) $startedAt->format('u')) / 1000),
         );
     }
 

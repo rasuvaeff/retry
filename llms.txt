@@ -40,8 +40,10 @@ composer require rasuvaeff/retry
 - Named factories: `Retry::fixed()`, `Retry::exponential()`, `Retry::immediate()`.
 - Tune a builder with `withFixed()`, `withExponential()`, `withImmediate()`,
   `withClock()`. No magic methods.
-- `stopAfterMs(int)` caps total wall-clock time: attempt 1 always runs, a
-  follow-up is skipped when `elapsed + nextDelay` would exceed the budget.
+- `stopAfterMs(int)` caps total time: attempt 1 always runs, a follow-up is
+  skipped when `elapsed + nextDelay` would exceed the budget. With the default
+  `SystemClock` elapsed time is monotonic (`hrtime()`); any other clock (e.g.
+  `FakeClock`) is read as-is. Same for `RetryingHttpClient` `budgetMs`.
 - `withContext(Context)` checks cooperative cancellation/deadline before each
   attempt and between 50 ms sleep slices. `ContextException` is never retried.
 - Clock uses PSR-20 (`Psr\Clock\ClockInterface`); no custom clock abstraction.
@@ -155,7 +157,7 @@ $client = new RetryingHttpClient(
     retryOnResponse: RetryDecisions::onlyIdempotent(RetryDecisions::transient()), // optional; default transient()
     respectRetryAfter: true,    // honor Retry-After header
     maxRetryAfterMs: 300_000,   // cap server delay; null disables
-    budgetMs: null,             // total wall-clock budget; null disables
+    budgetMs: null,             // total time budget (monotonic with SystemClock); null disables
     retryOnException: null,     // fn(ClientExceptionInterface, RequestInterface): bool; null = retry all
     throwOnExhausted: false,    // true -> throw Http\HttpRetryExhausted with history
     onRetry: [fn(HttpAttemptRecord $r): null => null],
