@@ -57,7 +57,10 @@ make release-check
   `ClockInterface`. Inject a `ClockInterface` via `Retry::withClock()` or pass it
   to `RetryingHttpClient` directly — it never lives on `RetryPolicy`. Both default
   to `Clock\SystemClock`; the HTTP clock affects `Retry-After` HTTP-date parsing
-  and budget timing.
+  and budget timing. Budget timing goes through `@internal Clock\ElapsedTimer`:
+  with `SystemClock` it is monotonic (`hrtime()`), any other clock is read
+  as-is — that is what keeps `withClock(FakeClock)` tests driving the budget.
+  Never measure elapsed time with `SystemClock::now()` directly.
 - `jitter(float $factor, JitterMode $mode)` takes a `Jitter\JitterMode` enum
   (`Additive`/`Full`/`None`), not a string; `factor` applies only to `Additive`.
   `AdditiveJitter` is equal jitter: it spreads the delay downward only
@@ -70,7 +73,7 @@ make release-check
   throwing an internal `UnacceptableResult` (which `shouldRetry()` always
   retries, bypassing `stopIf`). On exhaustion it surfaces as
   `RetryExhausted::lastException`; its `$result` holds the rejected value.
-- `stopAfterMs(int)` caps total wall-clock time. Attempt 1 always runs; a
+- `stopAfterMs(int)` caps total elapsed time (see the clock rule above). Attempt 1 always runs; a
   follow-up attempt is skipped when `elapsedMs + delayMs > budgetMs`, so an
   unused sleep is not added. The budget check runs before the `onRetry` hook and
   `sleepMs()`, so neither fires for the skipped attempt. `elapsedMs` is measured
@@ -96,7 +99,7 @@ make release-check
   then capped by `maxRetryAfterMs`, default `300_000`, `null` disables the
   cap). Transport exceptions always fall back to backoff and may be filtered with
   `retryOnException` (`null` retries all; non-matching are rethrown as-is).
-  `budgetMs` caps total wall-clock time. `onRetry` callbacks take
+  `budgetMs` caps total elapsed time. `onRetry` callbacks take
   `Http\HttpAttemptRecord` (response xor exception); `onExhausted` callbacks take
   `Http\HttpRetryExhausted` (mirrors the closure path, where `onExhausted` gets
   `RetryExhausted`) carrying `attempts` + the full `history`. `onExhausted` fires

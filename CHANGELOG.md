@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.0 — 2026-10-11
+
+- Retry budgets (`stopAfterMs()`, `RetryingHttpClient` `budgetMs`) are measured with the monotonic `hrtime()` when the clock is the default `Clock\SystemClock`, so an NTP step or manual clock change no longer shrinks or inflates the budget; `AttemptRecord::$elapsedMs` / `HttpAttemptRecord::$elapsedMs` use the same source. Any other clock (e.g. `FakeClock` via `withClock()`) is still read as-is, and `Retry-After` HTTP-dates are still parsed with the PSR-20 clock (#32).
+
 ## 1.5.0 — 2026-10-11
 
 - README requirements now match `composer.json` (`rasuvaeff/context` ^0.1, `psr/http-message` ^2.0); `README.ru.md` gains the missing cooperative-context section (#36).

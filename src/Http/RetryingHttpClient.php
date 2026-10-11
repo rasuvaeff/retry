@@ -11,6 +11,7 @@ use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Rasuvaeff\Context\Context;
 use Rasuvaeff\Context\ContextException;
+use Rasuvaeff\Retry\Clock\ElapsedTimer;
 use Rasuvaeff\Retry\Clock\SystemClock;
 use Rasuvaeff\Retry\Jitter\JitterInterface;
 use Rasuvaeff\Retry\RetryPolicyInterface;
@@ -115,7 +116,7 @@ final readonly class RetryingHttpClient implements ClientInterface
             ? new ContextAwareSleeper(inner: $this->policy->sleeper(), context: $this->context)
             : $this->policy->sleeper();
         $parser = $this->respectRetryAfter ? new RetryAfterParser(clock: $this->clock) : null;
-        $startedAt = $this->clock->now();
+        $timer = ElapsedTimer::start(clock: $this->clock);
         /** @var list<HttpAttemptRecord> $history */
         $history = [];
 
@@ -146,7 +147,7 @@ final readonly class RetryingHttpClient implements ClientInterface
                     return $response;
                 }
 
-                $elapsedMs = $this->elapsedMs(startedAt: $startedAt);
+                $elapsedMs = $timer->elapsedMs();
                 $retryAfterMs = $parser?->parseMs(headerValue: $response->getHeaderLine('Retry-After'));
                 $delayMs = $retryAfterMs !== null
                     ? $this->retryAfterDelayMs(retryAfterMs: $retryAfterMs, attempt: $attempt)
@@ -193,7 +194,7 @@ final readonly class RetryingHttpClient implements ClientInterface
                     }
                 }
 
-                $elapsedMs = $this->elapsedMs(startedAt: $startedAt);
+                $elapsedMs = $timer->elapsedMs();
                 $delayMs = $this->backoffDelayMs(attempt: $attempt);
 
                 if ($isLastAttempt || $this->budgetExceeded(elapsedMs: $elapsedMs, delayMs: $delayMs)) {
@@ -270,21 +271,6 @@ final readonly class RetryingHttpClient implements ClientInterface
     private function budgetExceeded(int $elapsedMs, int $delayMs): bool
     {
         return $this->budgetMs !== null && $elapsedMs + $delayMs > $this->budgetMs;
-    }
-
-    private function elapsedMs(\DateTimeImmutable $startedAt): int
-    {
-        $now = $this->clock->now();
-
-        // Clamped at zero - see Retry::elapsedMs(): a backwards clock step
-        // must not make HttpAttemptRecord's constructor throw mid-retry
-        // (which would also escape the PSR-18 ClientExceptionInterface
-        // contract).
-        return max(
-            0,
-            ($now->getTimestamp() - $startedAt->getTimestamp()) * 1000
-                + (int) (((int) $now->format('u') - (int) $startedAt->format('u')) / 1000),
-        );
     }
 
     private function callExhausted(HttpRetryExhausted $exhausted): void
