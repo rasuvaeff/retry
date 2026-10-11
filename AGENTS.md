@@ -89,8 +89,11 @@ make release-check
   `retryOnException(ClientExceptionInterface, RequestInterface)` both receive the
   request (gate on method/idempotency); `Http\RetryDecisions` ships ready-made
   predicates plus `onlyIdempotent($inner)`. When a retryable response carries a
-  valid `Retry-After` header, that delay replaces the configured backoff (no
-  jitter; capped by `maxRetryAfterMs`, default `300_000`, `null` disables the
+  valid `Retry-After` header, that delay replaces the configured backoff
+  (spread UPWARDS only by the optional `retryAfterJitter`: the jitter's
+  downward spread is mirrored, clamped at zero and saturated at
+  `PHP_INT_MAX`, so the client never retries earlier than the server asks;
+  then capped by `maxRetryAfterMs`, default `300_000`, `null` disables the
   cap). Transport exceptions always fall back to backoff and may be filtered with
   `retryOnException` (`null` retries all; non-matching are rethrown as-is).
   `budgetMs` caps total wall-clock time. `onRetry` callbacks take
@@ -105,6 +108,23 @@ make release-check
   `catch (ClientExceptionInterface)` and re-thrown via an `instanceof
   HttpRetryExhausted` guard — keep that guard. Pass `respectRetryAfter: false` to
   disable header handling.
+- `idempotentOnly: true` makes a non-idempotent request (`RetryDecisions::
+  isIdempotent()` is the single method list) a pure passthrough: one call, no
+  hooks, no exhaustion record, no `throwOnExhausted` wrapping. The default stays
+  `false` for BC — changing it is a major.
+- Context: `Retry::withContext()` and `RetryingHttpClient`'s `context:` share
+  `Sleeper\ContextAwareSleeper` (`@internal`, 50 ms slices). Without a context
+  the delay is ONE `sleepMs()` call (tests assert that). A `ContextException`
+  is never retried; on the HTTP path it deliberately escapes PSR-18. The context
+  is checked only before an attempt and inside the sleep, so a FINAL response
+  (not retryable / last attempt) is always returned, while a retryable response
+  or transport exception is lost to the `ContextException` once `onRetry` has
+  fired (same as `Retry::run()`).
+- Hooks (`onRetry`/`onExhausted`) are best-effort on both paths: `callHook()`
+  rethrows `ContextException` and sends every other `\Throwable` to the
+  `onHookError` callbacks, which are NOT guarded. Never fall back to
+  `error_log`/`trigger_error` for an unhandled hook error — stderr output kills
+  the CI infection run.
 - `runSafe()` is intentionally absent. Retry returns a value or throws
   `RetryExhausted`. To obtain a `Result<T, RetryExhausted>` without exceptions,
   wrap `run()` with `Result::fromThrowable()` (or equivalent from your Result

@@ -153,6 +153,19 @@ Retry::new()
 объясняющий, почему цикл сдался. Терминальная `AttemptRecord` имеет `delayMs` =
 `null` (после неё нет сна).
 
+Хуки работают по принципу best-effort: колбэк `onRetry` или `onExhausted`,
+бросивший исключение, не прерывает цикл и не подменяет исключение операции.
+Исключение хука уходит во все колбэки `onHookError()` (а если их нет —
+отбрасывается); `ContextException` из хука — это отмена, и она пробрасывается.
+Сами колбэки `onHookError()` не защищены.
+
+```php
+Retry::new()
+    ->onRetry(fn(AttemptRecord $record): never => throw new \RuntimeException('metrics down'))
+    ->onHookError(fn(\Throwable $hookError): null => null)
+    ->run(fn(): string => flakyOperation());
+```
+
 ### Кооперативный контекст
 
 Подключите контекст запроса или задачи через `withContext()`. Контекст
@@ -166,6 +179,9 @@ use Rasuvaeff\Context\Context;
 $value = Retry::new()->withContext($context)->run(fn(): string => flakyOperation());
 $controller->cancel();
 ```
+
+`Http\RetryingHttpClient` принимает тот же контекст аргументом `context:`
+(см. [Декоратор PSR-18](#декоратор-psr-18)).
 
 ### Интеграция с Result
 
@@ -191,6 +207,13 @@ $value = $result->unwrapOr('fallback');
 `RetryingHttpClient` оборачивает любой PSR-18 клиент. `retryOnResponse` решает,
 какие ответы повторять; в `Http\RetryDecisions` есть готовые предикаты.
 
+> **По умолчанию повторяются и неидемпотентные запросы.** Без настройки клиент
+> повторяет ответы `RetryDecisions::transient()` и любые транспортные исключения
+> PSR-18 для **любого** метода, включая POST и PATCH — POST, который сервер уже
+> обработал, может уйти дважды. Передайте `idempotentOnly: true`, чтобы запросы
+> с неидемпотентным методом отправлялись ровно один раз (без повторов, хуков и
+> исчерпания), либо ограничьте повторы сами через `RetryDecisions::onlyIdempotent()`.
+
 ```php
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -211,6 +234,10 @@ $client = new RetryingHttpClient(
     throwOnExhausted: false,
     onRetry: [fn(HttpAttemptRecord $record): null => null],
     onExhausted: [fn(HttpRetryExhausted $exhausted): null => null],
+    context: null,
+    idempotentOnly: true,
+    retryAfterJitter: null,
+    onHookError: [],
 );
 ```
 
@@ -249,9 +276,10 @@ $client = new RetryingHttpClient(inner: $psr18Client, policy: $retry->toPolicy()
 
 Переносится только часть «попытки и задержки»: число попыток, backoff, jitter,
 sleeper и randomizer. Предикаты исключений и результата, хуки
-`onRetry`/`onExhausted`, бюджет `stopAfterMs()` и часы **не** переносятся —
-передайте их HTTP-аналоги (`retryOnResponse`, `retryOnException`, `onRetry`,
-`onExhausted`, `budgetMs`, `clock`) в конструктор клиента. `RetryPolicy::fixed()` /
+`onRetry`/`onExhausted`/`onHookError`, бюджет `stopAfterMs()`, часы и контекст
+**не** переносятся — передайте их HTTP-аналоги (`retryOnResponse`,
+`retryOnException`, `onRetry`, `onExhausted`, `onHookError`, `budgetMs`, `clock`,
+`context`) в конструктор клиента. `RetryPolicy::fixed()` /
 `exponential()` / `fixedFor()` / `exponentialFor()` также принимают
 необязательный аргумент `jitter:`.
 
@@ -263,6 +291,9 @@ sleeper и randomizer. Предикаты исключений и результ
 | `RetryDecisions::rateLimited()` | Только 429. |
 | `RetryDecisions::transient()` | 408, 425, 429, 500, 502, 503, 504. |
 | `RetryDecisions::onlyIdempotent($inner)` | Оборачивает `$inner`; повторяет **только** идемпотентные методы (GET, HEAD, PUT, DELETE, OPTIONS, TRACE). |
+
+`RetryDecisions::isIdempotent(RequestInterface): bool` даёт ту же проверку метода
+для собственных предикатов (например, `retryOnException`).
 
 Аргументы конструктора помимо `inner` / `policy`:
 
@@ -277,6 +308,10 @@ sleeper и randomizer. Предикаты исключений и результ
 | `throwOnExhausted` | `false` | При `true` выбрасывает `Http\HttpRetryExhausted` (с историей) при исчерпании вместо возврата последнего ответа / проброса последнего транспортного исключения. |
 | `onRetry` | `[]` | Колбэки `fn(HttpAttemptRecord): void`, срабатывают перед сном каждой повторной попытки. |
 | `onExhausted` | `[]` | Колбэки `fn(HttpRetryExhausted): void`, срабатывают при любом исчерпании (`maxAttempts` или `budgetMs`); аргумент несёт `attempts` и полную `history`. |
+| `context` | `null` | `Rasuvaeff\Context\Context`, проверяемый перед каждой попыткой и между 50-миллисекундными отрезками сна; его `ContextException` никогда не повторяется. |
+| `idempotentOnly` | `false` | При `true` запрос с неидемпотентным методом проходит насквозь одним вызовом: без повторов, хуков и исчерпания. |
+| `retryAfterJitter` | `null` | `Jitter\JitterInterface`, размазывающий задержку из `Retry-After` только **вверх**; ограничение `maxRetryAfterMs` сохраняется. |
+| `onHookError` | `[]` | Колбэки `fn(\Throwable): void`, получающие исключения из `onRetry`/`onExhausted`; такие исключения больше не прерывают цикл. |
 
 Бюджет попыток один и покрывает как повторяемые ответы, так и транспортные
 исключения PSR-18, поэтому внутренний клиент вызывается не более `maxAttempts` раз.
@@ -285,9 +320,29 @@ sleeper и randomizer. Предикаты исключений и результ
 RFC 850 и asctime игнорируются, как и delta-seconds слишком большие, чтобы быть
 пригодной задержкой, и даты, не проходящие точный round-trip формата
 IMF-fixdate — всё это откатывается на настроенный backoff). Задержка от сервера
-идёт без jitter и ограничивается `maxRetryAfterMs`. Транспортные исключения
-всегда откатываются на backoff (`Retry-After` недоступен). Передайте
-`respectRetryAfter: false`, чтобы отключить обработку заголовка.
+ограничивается `maxRetryAfterMs`. Транспортные исключения всегда откатываются на
+backoff (`Retry-After` недоступен). Передайте `respectRetryAfter: false`, чтобы
+отключить обработку заголовка.
+
+Много воркеров, получивших одинаковый `Retry-After` (один всплеск 429), повторили
+бы запрос в одно и то же мгновение. `retryAfterJitter` разносит их, никогда не
+повторяя раньше, чем просил сервер: разброс jitter вниз зеркалится вверх, так что
+`FullJitter` даёт `[delay, 2·delay]`, а `AdditiveJitter(factor: f)` —
+`[delay, (1+f)·delay]`. `maxRetryAfterMs` применяется после разброса, поэтому,
+когда серверная задержка достигает потолка, разброс исчезает.
+
+С `context` отменённый или истёкший контекст бросает свой `ContextException`
+перед следующей попыткой или во время сна — в том числе посреди долгого ожидания
+`Retry-After`: сон идёт 50-миллисекундными отрезками и заканчивается на дедлайне
+контекста. Это исключение намеренно выходит за контракт PSR-18
+`ClientExceptionInterface`: это отмена со стороны вызывающего, а не сбой
+транспорта. Финальный ответ (неповторяемый или от последней попытки) всегда
+возвращается, даже если контекст закончился, пока запрос был в пути; если же
+впереди повтор, закончившийся контекст бросает исключение — уже после того, как
+для этой попытки сработал `onRetry`.
+
+Хуки `onRetry`/`onExhausted` работают по принципу best-effort, как и в `Retry`:
+исключение хука уходит в `onHookError`, цикл продолжается.
 
 Перед каждой повторной отправкой тело запроса перематывается, если оно
 seekable — PSR-7 stream-тела хранят позицию, и без перемотки попытка 2+ POST
@@ -336,7 +391,7 @@ retry идемпотентными/безтелесными запросами �
 | `Randomizer\SystemRandomizer` | Runtime-рандомайзер. |
 | `Randomizer\FixedRandomizer` | Детерминированный тестовый рандомайзер. |
 | `Http\RetryingHttpClient` | Декоратор PSR-18 с поддержкой `Retry-After`. |
-| `Http\RetryDecisions` | Готовые предикаты ответа + обёртка `onlyIdempotent()`. |
+| `Http\RetryDecisions` | Готовые предикаты ответа, обёртка `onlyIdempotent()` и проверка `isIdempotent()`. |
 | `Http\HttpAttemptRecord` | Одна HTTP-попытка: attempt, delay, elapsed и `response` xor `exception`. |
 | `Http\HttpRetryExhausted` | Дескриптор исчерпания, передаётся в каждый хук `onExhausted` и выбрасывается при `throwOnExhausted`; `ClientExceptionInterface`, несущий `attempts` и историю. |
 | `Http\RetryAfterParser` | Разбирает `Retry-After` в миллисекунды через часы PSR-20. |
@@ -361,6 +416,7 @@ backoff до `capMs` (по умолчанию 30 с) либо серверный
 | Рычаг | Действие |
 |---|---|
 | Ограничить серверные задержки | Снизьте `maxRetryAfterMs` (до нескольких секунд), чтобы враждебный/большой `Retry-After` не прибивал воркер; держите `capMs` и `budgetMs` скромными. |
+| Ограничить сон дедлайном запроса | Подключите контекст `rasuvaeff/context` (`Retry::withContext()` или `context:` у `RetryingHttpClient`): сон идёт 50-миллисекундными отрезками и заканчивается на дедлайне или при отмене. |
 | Снести длинные повторы с горячего пути | Выполняйте повторы со значимым backoff из очереди / RoadRunner Jobs-воркера, а не из синхронного request-воркера. |
 | Кооперативный сон | Внедрите неблокирующий `SleeperInterface` через `Retry::withSleeper()` (ядро) либо sleeper политики (HTTP), если рантайм предлагает кооперативное планирование (например, sleep корутины Swoole). |
 

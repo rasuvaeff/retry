@@ -148,6 +148,19 @@ the full `AttemptRecord`; `onExhausted` callbacks receive the `RetryExhausted`.
 explaining why the loop gave up. The terminal `AttemptRecord` has `delayMs` of
 `null` (no sleep followed it).
 
+Hooks are best-effort: an `onRetry` or `onExhausted` callback that throws does
+not abort the loop or replace the operation's exception. The hook's exception
+goes to every `onHookError()` callback (and is dropped when there are none); a
+`ContextException` thrown by a hook is cancellation and propagates.
+`onHookError()` callbacks themselves are not guarded.
+
+```php
+Retry::new()
+    ->onRetry(fn(AttemptRecord $record): never => throw new \RuntimeException('metrics down'))
+    ->onHookError(fn(\Throwable $hookError): null => null)
+    ->run(fn(): string => flakyOperation());
+```
+
 ### Cooperative context
 
 Attach a request or job context with `withContext()`. The context is checked
@@ -161,6 +174,9 @@ use Rasuvaeff\Context\Context;
 $value = Retry::new()->withContext($context)->run(fn(): string => flakyOperation());
 $controller->cancel();
 ```
+
+`Http\RetryingHttpClient` takes the same context as its `context:` argument
+(see [PSR-18 decorator](#psr-18-decorator)).
 
 ### Result integration
 
@@ -187,6 +203,13 @@ $value = $result->unwrapOr('fallback');
 `RetryingHttpClient` decorates any PSR-18 client. `retryOnResponse` decides which
 responses are retried; `Http\RetryDecisions` ships ready-made predicates.
 
+> **Defaults retry non-idempotent requests.** Out of the box the client retries
+> `RetryDecisions::transient()` responses and every PSR-18 transport exception
+> for **any** method, POST and PATCH included — a POST the server already
+> processed can be sent twice. Pass `idempotentOnly: true` to send requests with
+> a non-idempotent method exactly once (no retry, no hooks, no exhaustion), or
+> gate retries yourself with `RetryDecisions::onlyIdempotent()`.
+
 ```php
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -207,6 +230,10 @@ $client = new RetryingHttpClient(
     throwOnExhausted: false,
     onRetry: [fn(HttpAttemptRecord $record): null => null],
     onExhausted: [fn(HttpRetryExhausted $exhausted): null => null],
+    context: null,
+    idempotentOnly: true,
+    retryAfterJitter: null,
+    onHookError: [],
 );
 ```
 
@@ -244,10 +271,11 @@ $client = new RetryingHttpClient(inner: $psr18Client, policy: $retry->toPolicy()
 ```
 
 Only the attempt/delay half carries over: max attempts, backoff, jitter, sleeper
-and randomizer. Exception and result predicates, the `onRetry`/`onExhausted`
-hooks, the `stopAfterMs()` budget and the clock do **not** — pass their HTTP
-counterparts (`retryOnResponse`, `retryOnException`, `onRetry`, `onExhausted`,
-`budgetMs`, `clock`) to the client constructor. `RetryPolicy::fixed()` /
+and randomizer. Exception and result predicates, the `onRetry`/`onExhausted`/
+`onHookError` hooks, the `stopAfterMs()` budget, the clock and the context do
+**not** — pass their HTTP counterparts (`retryOnResponse`, `retryOnException`,
+`onRetry`, `onExhausted`, `onHookError`, `budgetMs`, `clock`, `context`) to the
+client constructor. `RetryPolicy::fixed()` /
 `exponential()` / `fixedFor()` / `exponentialFor()` also accept an optional
 `jitter:` argument directly.
 
@@ -260,12 +288,14 @@ Ready-made response predicates:
 | `RetryDecisions::transient()` | 408, 425, 429, 500, 502, 503, 504. |
 | `RetryDecisions::onlyIdempotent($inner)` | Wraps `$inner`; retries **only** idempotent methods (GET, HEAD, PUT, DELETE, OPTIONS, TRACE). |
 
+`RetryDecisions::isIdempotent(RequestInterface): bool` exposes the same method
+check for your own predicates (e.g. a `retryOnException`).
+
 Constructor arguments beyond `inner` / `policy`:
 
 | Argument | Default | Effect |
 |---|---|---|
 | `retryOnResponse` | `RetryDecisions::transient()` | Predicate `fn(ResponseInterface, RequestInterface[, int $attempt]): bool`. |
-
 | `clock` | `Clock\SystemClock` | PSR-20 clock for `Retry-After` HTTP-date parsing and budget timing. |
 | `respectRetryAfter` | `true` | Honor the server's `Retry-After` header. |
 | `maxRetryAfterMs` | `300_000` | Cap on a `Retry-After` delay; `null` disables the cap. |
@@ -274,6 +304,10 @@ Constructor arguments beyond `inner` / `policy`:
 | `throwOnExhausted` | `false` | When `true`, throw `Http\HttpRetryExhausted` (carrying the history) on exhaustion instead of returning the last response / rethrowing the last transport exception. |
 | `onRetry` | `[]` | Callbacks `fn(HttpAttemptRecord): void` fired before each retry sleep. |
 | `onExhausted` | `[]` | Callbacks `fn(HttpRetryExhausted): void` fired on every exhaustion (`maxAttempts` or `budgetMs`); the argument carries `attempts` and the full `history`. |
+| `context` | `null` | `Rasuvaeff\Context\Context` checked before every attempt and between 50 ms sleep slices; its `ContextException` is never retried. |
+| `idempotentOnly` | `false` | When `true`, a request with a non-idempotent method passes through with a single call: no retry, no hooks, no exhaustion. |
+| `retryAfterJitter` | `null` | `Jitter\JitterInterface` spreading a `Retry-After` delay **upwards** only; the cap still applies. |
+| `onHookError` | `[]` | Callbacks `fn(\Throwable): void` receiving exceptions thrown by `onRetry`/`onExhausted`, which no longer abort the loop. |
 
 A single attempt budget covers both retryable responses and PSR-18 transport
 exceptions, so the inner client is called at most `maxAttempts` times. When a
@@ -281,10 +315,29 @@ retryable response carries a valid `Retry-After` header, that delay replaces the
 configured backoff (delta-seconds or IMF-fixdate; the obsolete RFC 850 and
 asctime date forms are ignored, as are delta-seconds too large to be a usable
 delay and dates that don't round-trip the IMF-fixdate format exactly — all fall
-back to the configured backoff). The server delay carries no jitter and is capped
-by `maxRetryAfterMs`. Transport exceptions always fall back to backoff (no
+back to the configured backoff). The server delay is capped by
+`maxRetryAfterMs`. Transport exceptions always fall back to backoff (no
 `Retry-After` is available). Pass `respectRetryAfter: false` to disable header
 handling.
+
+Many workers that receive the same `Retry-After` (one 429 burst) would all retry
+at the same instant. `retryAfterJitter` spreads them without ever retrying
+earlier than the server asked: the jitter's downward spread is mirrored upwards,
+so `FullJitter` yields `[delay, 2·delay]` and `AdditiveJitter(factor: f)` yields
+`[delay, (1+f)·delay]`. `maxRetryAfterMs` is applied after the spread, so once
+the server delay reaches the cap the spread disappears.
+
+With a `context`, a cancelled or expired context throws its `ContextException`
+before the next attempt or during a sleep, also out of a long `Retry-After`
+wait: the sleep runs in 50 ms slices and ends at the context deadline. The
+exception deliberately escapes the PSR-18 `ClientExceptionInterface` contract —
+it is the caller's own cancellation, not a transport failure. A final response
+(not retryable, or from the last attempt) is always returned, even if the
+context ended while it was in flight; when a retry is pending, the ended
+context throws instead, after `onRetry` has fired for that attempt.
+
+The `onRetry`/`onExhausted` hooks are best-effort, as on `Retry`: a throwing
+hook goes to `onHookError` and the loop continues.
 
 Before every re-send the request body is rewound if it is seekable — PSR-7
 stream bodies are stateful, and without the rewind attempt 2+ of a POST would
@@ -333,7 +386,7 @@ moves that clock (budgets then exhaust without a real wait).
 | `Randomizer\SystemRandomizer` | Runtime randomizer. |
 | `Randomizer\FixedRandomizer` | Deterministic test randomizer. |
 | `Http\RetryingHttpClient` | PSR-18 retrying decorator with `Retry-After` support. |
-| `Http\RetryDecisions` | Ready-made response predicates + `onlyIdempotent()` wrapper. |
+| `Http\RetryDecisions` | Ready-made response predicates, `onlyIdempotent()` wrapper and `isIdempotent()` check. |
 | `Http\HttpAttemptRecord` | One HTTP attempt: attempt, delay, elapsed, and `response` xor `exception`. |
 | `Http\HttpRetryExhausted` | Exhaustion descriptor passed to every `onExhausted` hook and thrown when `throwOnExhausted` is set; a `ClientExceptionInterface` carrying `attempts` and the history. |
 | `Http\RetryAfterParser` | Parses `Retry-After` into milliseconds via PSR-20 clock. |
@@ -358,6 +411,7 @@ Recommendations:
 | Lever | Action |
 |---|---|
 | Cap server-driven delays | Lower `maxRetryAfterMs` (e.g. a few seconds) so a hostile/large `Retry-After` cannot pin a worker; keep `capMs` and `budgetMs` modest. |
+| Bound sleeps by the request deadline | Attach a `rasuvaeff/context` context (`Retry::withContext()`, or `context:` on `RetryingHttpClient`): the sleep runs in 50 ms slices and ends at the deadline or on cancellation. |
 | Move long retries off the hot path | Run retries with meaningful backoff from a queue / RoadRunner Jobs worker, not the synchronous request worker. |
 | Cooperative sleep | Inject a non-blocking `SleeperInterface` via `Retry::withSleeper()` (core) or the policy's sleeper (HTTP) when your runtime offers cooperative scheduling (e.g. a Swoole coroutine sleep). |
 

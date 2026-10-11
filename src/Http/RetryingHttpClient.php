@@ -9,8 +9,12 @@ use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Rasuvaeff\Context\Context;
+use Rasuvaeff\Context\ContextException;
 use Rasuvaeff\Retry\Clock\SystemClock;
+use Rasuvaeff\Retry\Jitter\JitterInterface;
 use Rasuvaeff\Retry\RetryPolicyInterface;
+use Rasuvaeff\Retry\Sleeper\ContextAwareSleeper;
 
 /**
  * @api
@@ -34,6 +38,10 @@ final readonly class RetryingHttpClient implements ClientInterface
      * @param list<\Closure(HttpAttemptRecord): void>                              $onRetry
      * @param list<\Closure(HttpRetryExhausted): void>                             $onExhausted
      * @param null|\Closure(ClientExceptionInterface, RequestInterface, int=): bool $retryOnException When null, all PSR-18 transport exceptions are retried.
+     * @param null|Context                                                         $context          Checked before every attempt and between 50 ms sleep slices; a {@see ContextException} is never retried.
+     * @param bool                                                                 $idempotentOnly   When true, requests with a non-idempotent method ({@see RetryDecisions::isIdempotent()}) pass through with a single call: no retry, no hooks, no exhaustion.
+     * @param null|JitterInterface                                                 $retryAfterJitter Spreads a `Retry-After` delay upwards only, never below the server's value; the `maxRetryAfterMs` cap still applies.
+     * @param list<\Closure(\Throwable): void>                                     $onHookError      Receives exceptions thrown by `onRetry`/`onExhausted` hooks, which no longer abort the loop.
      */
     public function __construct(
         private ClientInterface $inner,
@@ -47,6 +55,10 @@ final readonly class RetryingHttpClient implements ClientInterface
         private bool $throwOnExhausted = false,
         private array $onRetry = [],
         private array $onExhausted = [],
+        private ?Context $context = null,
+        private bool $idempotentOnly = false,
+        private ?JitterInterface $retryAfterJitter = null,
+        private array $onHookError = [],
     ) {
         $this->retryOnResponse = $retryOnResponse ?? RetryDecisions::transient();
         $this->responsePredicateTakesAttempt = $this->takesAttempt(predicate: $this->retryOnResponse);
@@ -65,8 +77,21 @@ final readonly class RetryingHttpClient implements ClientInterface
      *
      * When `respectRetryAfter` is enabled and a retryable response carries a
      * valid `Retry-After` header, that delay replaces the configured backoff
-     * (no jitter; capped by `maxRetryAfterMs` if non-null). Transport exceptions
-     * always fall back to backoff.
+     * (spread upwards by `retryAfterJitter` when set, then capped by
+     * `maxRetryAfterMs` if non-null). Transport exceptions always fall back to
+     * backoff.
+     *
+     * With a `context`, a cancelled or expired context throws its
+     * {@see ContextException} before the next attempt or during a sleep. That
+     * exception deliberately escapes the PSR-18 `ClientExceptionInterface`
+     * contract: it is the caller's own cancellation, not a transport failure.
+     * A final response (not retryable, or from the last attempt) is always
+     * returned; when a retry is pending, the context ending throws instead,
+     * after `onRetry` has fired for that attempt.
+     *
+     * `onRetry`/`onExhausted` hooks are best-effort: an exception from a hook
+     * goes to `onHookError` and the loop continues (a `ContextException` from a
+     * hook propagates).
      *
      * Non-retryable transport exceptions are rethrown as-is (passthrough). When
      * retries are exhausted (by `maxAttempts` or `budgetMs`), every `onExhausted`
@@ -79,7 +104,16 @@ final readonly class RetryingHttpClient implements ClientInterface
     #[\Override]
     public function sendRequest(RequestInterface $request): ResponseInterface
     {
+        if ($this->idempotentOnly && !RetryDecisions::isIdempotent(request: $request)) {
+            $this->context?->assertActive();
+
+            return $this->inner->sendRequest(request: $request);
+        }
+
         $maxAttempts = $this->policy->maxAttempts();
+        $sleeper = $this->context instanceof Context
+            ? new ContextAwareSleeper(inner: $this->policy->sleeper(), context: $this->context)
+            : $this->policy->sleeper();
         $parser = $this->respectRetryAfter ? new RetryAfterParser(clock: $this->clock) : null;
         $startedAt = $this->clock->now();
         /** @var list<HttpAttemptRecord> $history */
@@ -87,6 +121,7 @@ final readonly class RetryingHttpClient implements ClientInterface
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             $isLastAttempt = $attempt >= $maxAttempts;
+            $this->context?->assertActive();
 
             // PSR-7 stream bodies are stateful: after attempt 1 the inner
             // client has read the stream to EOF, and a re-send would silently
@@ -114,7 +149,7 @@ final readonly class RetryingHttpClient implements ClientInterface
                 $elapsedMs = $this->elapsedMs(startedAt: $startedAt);
                 $retryAfterMs = $parser?->parseMs(headerValue: $response->getHeaderLine('Retry-After'));
                 $delayMs = $retryAfterMs !== null
-                    ? $this->capRetryAfterMs($retryAfterMs)
+                    ? $this->retryAfterDelayMs(retryAfterMs: $retryAfterMs, attempt: $attempt)
                     : $this->backoffDelayMs(attempt: $attempt);
 
                 if ($isLastAttempt || $this->budgetExceeded(elapsedMs: $elapsedMs, delayMs: $delayMs)) {
@@ -144,7 +179,7 @@ final readonly class RetryingHttpClient implements ClientInterface
                 );
                 $history[] = $record;
                 $this->callOnRetry(record: $record);
-                $this->policy->sleeper()->sleepMs(ms: $delayMs);
+                $sleeper->sleepMs(ms: $delayMs);
             } catch (ClientExceptionInterface $exception) {
                 if ($exception instanceof HttpRetryExhausted) {
                     throw $exception;
@@ -188,7 +223,7 @@ final readonly class RetryingHttpClient implements ClientInterface
                 );
                 $history[] = $record;
                 $this->callOnRetry(record: $record);
-                $this->policy->sleeper()->sleepMs(ms: $delayMs);
+                $sleeper->sleepMs(ms: $delayMs);
             }
         }
 
@@ -211,13 +246,25 @@ final readonly class RetryingHttpClient implements ClientInterface
         );
     }
 
-    private function capRetryAfterMs(int $retryAfterMs): int
+    private function retryAfterDelayMs(int $retryAfterMs, int $attempt): int
     {
-        if ($this->maxRetryAfterMs === null) {
-            return $retryAfterMs;
+        $delayMs = $retryAfterMs;
+        if ($this->retryAfterJitter instanceof JitterInterface) {
+            // Jitter implementations shrink a delay; mirror the shrink upwards
+            // so the server's value stays the minimum.
+            $spreadMs = max(0, $retryAfterMs - $this->retryAfterJitter->apply(
+                delayMs: $retryAfterMs,
+                attempt: $attempt,
+                randomizer: $this->policy->randomizer(),
+            ));
+            $delayMs = $retryAfterMs + min($spreadMs, \PHP_INT_MAX - $retryAfterMs);
         }
 
-        return min($retryAfterMs, $this->maxRetryAfterMs);
+        if ($this->maxRetryAfterMs === null) {
+            return $delayMs;
+        }
+
+        return min($delayMs, $this->maxRetryAfterMs);
     }
 
     private function budgetExceeded(int $elapsedMs, int $delayMs): bool
@@ -243,14 +290,33 @@ final readonly class RetryingHttpClient implements ClientInterface
     private function callExhausted(HttpRetryExhausted $exhausted): void
     {
         foreach ($this->onExhausted as $callback) {
-            $callback($exhausted);
+            $this->callHook(hook: $callback, argument: $exhausted);
         }
     }
 
     private function callOnRetry(HttpAttemptRecord $record): void
     {
         foreach ($this->onRetry as $callback) {
-            $callback($record);
+            $this->callHook(hook: $callback, argument: $record);
+        }
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param \Closure(T): void $hook
+     * @param T $argument
+     */
+    private function callHook(\Closure $hook, object $argument): void
+    {
+        try {
+            $hook($argument);
+        } catch (ContextException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            foreach ($this->onHookError as $callback) {
+                $callback($exception);
+            }
         }
     }
 }

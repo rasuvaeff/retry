@@ -47,6 +47,11 @@ composer require rasuvaeff/retry
 - Clock uses PSR-20 (`Psr\Clock\ClockInterface`); no custom clock abstraction.
 - `Retry::onRetry` callbacks receive an `AttemptRecord`; `Retry::onExhausted`
   callbacks receive the `RetryExhausted` exception (no positional args).
+- Hooks are best-effort (both `Retry` and `RetryingHttpClient`): a throwing
+  `onRetry`/`onExhausted` does not abort the loop or replace the operation's
+  exception; the hook's exception goes to `onHookError` callbacks (dropped when
+  none). A `ContextException` from a hook propagates. `onHookError` itself is
+  not guarded.
 - `jitter(float $factor, JitterMode $mode)` takes a `Jitter\JitterMode` enum
   (`Additive`/`Full`/`None`), not a string; `factor` applies only to `Additive`.
   `Additive` is equal jitter (spreads downward only), so `capMs` stays a hard
@@ -67,13 +72,26 @@ composer require rasuvaeff/retry
   non-seekable body are NOT safely retryable — the body cannot be replayed.
   Unusable `Retry-After` values (oversized delta-seconds, dates that don't
   round-trip IMF-fixdate exactly) are ignored and fall back to backoff.
+- DEFAULTS RETRY NON-IDEMPOTENT REQUESTS (POST/PATCH included, transport
+  exceptions too). `idempotentOnly: true` sends non-idempotent methods exactly
+  once (pure passthrough: no retry, no hooks, no exhaustion).
+  `RetryDecisions::isIdempotent(RequestInterface): bool` is the shared check.
+- `RetryingHttpClient` `context:` (`Rasuvaeff\Context\Context`) is checked before
+  every attempt and between 50 ms sleep slices; its `ContextException` escapes
+  PSR-18 on purpose and is never retried. A long `Retry-After` sleep ends at the
+  context deadline. A FINAL response (not retryable / last attempt) is always
+  returned; with a retry pending, the ended context throws after `onRetry`.
+- `retryAfterJitter: ?JitterInterface` spreads a `Retry-After` delay UPWARDS only
+  (the jitter's downward spread is mirrored: `FullJitter` -> `[d, 2d]`), then
+  `maxRetryAfterMs` caps it. Default null = server value as-is.
 - `retryOnResponse` is optional (default `RetryDecisions::transient()`). Either
   predicate may declare a 3rd `int $attempt` (1-based); it is passed only to
   closures with >= 3 params or variadic, so 2-arg closures are unchanged.
 - `Retry::toPolicy(): RetryPolicy` carries maxAttempts/backoff/jitter/sleeper/
-  randomizer ONLY. Predicates, hooks, `stopAfterMs` budget and clock do not
-  carry over — pass `retryOnResponse`/`retryOnException`/`onRetry`/
-  `onExhausted`/`budgetMs`/`clock` to `RetryingHttpClient` yourself.
+  randomizer ONLY. Predicates, hooks (incl. `onHookError`), `stopAfterMs`
+  budget, clock and context do not carry over — pass `retryOnResponse`/
+  `retryOnException`/`onRetry`/`onExhausted`/`onHookError`/`budgetMs`/`clock`/
+  `context` to `RetryingHttpClient` yourself.
 - `RetryPolicy::fixed()/exponential()/fixedFor()/exponentialFor()` take an
   optional trailing `?JitterInterface $jitter` (default `NoJitter`).
 - `FakeSleeper::advancing(FakeClock $clock, ?\Closure $onSleep = null)`: each
@@ -121,7 +139,7 @@ Testability: `Sleeper\SleeperInterface`, `SystemSleeper`, `FakeSleeper`
 `Randomizer\RandomizerInterface`, `SystemRandomizer`, `FixedRandomizer`.
 
 HTTP: `Http\RetryingHttpClient` (PSR-18 decorator with `Retry-After` support),
-`Http\RetryDecisions` (ready-made predicates + `onlyIdempotent()`),
+`Http\RetryDecisions` (ready-made predicates, `onlyIdempotent()`, `isIdempotent()`),
 `Http\HttpAttemptRecord`, `Http\HttpRetryExhausted`, `Http\RetryAfterParser`.
 
 ```php
@@ -142,6 +160,10 @@ $client = new RetryingHttpClient(
     throwOnExhausted: false,    // true -> throw Http\HttpRetryExhausted with history
     onRetry: [fn(HttpAttemptRecord $r): null => null],
     onExhausted: [fn(HttpRetryExhausted $exhausted): null => null], // ->attempts, ->history
+    context: null,              // Rasuvaeff\Context\Context; cancellation/deadline between attempts and during sleeps
+    idempotentOnly: true,       // POST/PATCH pass through with a single call
+    retryAfterJitter: null,     // JitterInterface; spreads Retry-After upwards only
+    onHookError: [fn(\Throwable $e): null => null], // exceptions thrown by onRetry/onExhausted
     // clock defaults to Clock\SystemClock; pass Clock\FakeClock in tests
 );
 ```
