@@ -255,7 +255,7 @@ final readonly class RetryingHttpClient implements ClientInterface
                 attempt: $attempt,
                 randomizer: $this->policy->randomizer(),
             ));
-            $delayMs = $spreadMs > \PHP_INT_MAX - $retryAfterMs ? \PHP_INT_MAX : $retryAfterMs + $spreadMs;
+            $delayMs = $retryAfterMs + min($spreadMs, \PHP_INT_MAX - $retryAfterMs);
         }
 
         if ($this->maxRetryAfterMs === null) {

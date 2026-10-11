@@ -157,4 +157,17 @@ final class RetryContextTest
 
         Assert::same($sleeper->delays(), [120]);
     }
+
+    public function laterWithContextReplacesTheEarlierOne(): void
+    {
+        [$cancelled, $controller] = Context::background(timeSource: new FakeTimeSource())->withCancel();
+        $controller->cancel();
+
+        $value = Retry::new()
+            ->withContext(context: $cancelled)
+            ->withContext(context: Context::background(timeSource: new FakeTimeSource()))
+            ->run(operation: static fn(): string => 'ok');
+
+        Assert::same($value, 'ok');
+    }
 }

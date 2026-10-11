@@ -7,8 +7,10 @@ namespace Rasuvaeff\Retry\Sleeper;
 use Rasuvaeff\Context\Context;
 
 /**
- * Sleeps in 50 ms slices, checking the context before and after every slice,
- * so a cancellation or an expired deadline interrupts a long backoff.
+ * Sleeps in 50 ms slices, checking the context before every slice, so a
+ * cancellation or an expired deadline interrupts a long backoff. A slice never
+ * outlasts the context deadline; the caller checks the context again before
+ * its next attempt.
  *
  * @internal
  */
@@ -28,9 +30,8 @@ final readonly class ContextAwareSleeper implements SleeperInterface
         while ($remaining > 0) {
             $this->context->assertActive();
             $slice = min(self::SLICE_MS, $remaining, (int) ($this->context->remainingMs() ?? $remaining));
-            $this->inner->sleepMs(ms: max(1, $slice));
+            $this->inner->sleepMs(ms: $slice);
             $remaining -= $slice;
         }
-        $this->context->assertActive();
     }
 }
