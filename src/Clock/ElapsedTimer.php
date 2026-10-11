@@ -33,7 +33,7 @@ final readonly class ElapsedTimer
      */
     public static function start(ClockInterface $clock, ?\Closure $nanoseconds = null): self
     {
-        $nanoseconds ??= static fn(): int => (int) hrtime(true);
+        $nanoseconds ??= static fn(): int => (int) hrtime(as_number: true);
 
         if ($clock instanceof SystemClock) {
             return new self(clock: null, startedAt: null, startedNs: $nanoseconds(), nanoseconds: $nanoseconds);
