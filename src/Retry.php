@@ -343,9 +343,9 @@ final readonly class Retry
     {
         $history = [];
         $startedAt = $this->clock->now();
-        $sleeper = $this->context === null
-            ? $this->sleeper
-            : new ContextAwareSleeper(inner: $this->sleeper, context: $this->context);
+        $sleeper = $this->context instanceof Context
+            ? new ContextAwareSleeper(inner: $this->sleeper, context: $this->context)
+            : $this->sleeper;
 
         for ($attempt = 1; $attempt <= $this->maxAttempts; $attempt++) {
             try {

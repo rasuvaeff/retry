@@ -109,9 +109,9 @@ final readonly class RetryingHttpClient implements ClientInterface
         }
 
         $maxAttempts = $this->policy->maxAttempts();
-        $sleeper = $this->context === null
-            ? $this->policy->sleeper()
-            : new ContextAwareSleeper(inner: $this->policy->sleeper(), context: $this->context);
+        $sleeper = $this->context instanceof Context
+            ? new ContextAwareSleeper(inner: $this->policy->sleeper(), context: $this->context)
+            : $this->policy->sleeper();
         $parser = $this->respectRetryAfter ? new RetryAfterParser(clock: $this->clock) : null;
         $startedAt = $this->clock->now();
         /** @var list<HttpAttemptRecord> $history */

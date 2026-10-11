@@ -128,9 +128,9 @@ final class RetryingHttpClientContextTest
     public function responseReceivedAfterCancellationIsStillReturned(): void
     {
         [$context, $controller] = Context::background(timeSource: new FakeTimeSource())->withCancel();
-        $inner = new class ($controller) implements ClientInterface {
+        $inner = new readonly class ($controller) implements ClientInterface {
             public function __construct(
-                private readonly ContextController $controller,
+                private ContextController $controller,
             ) {}
 
             #[\Override]
