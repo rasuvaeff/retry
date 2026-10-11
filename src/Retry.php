@@ -20,6 +20,7 @@ use Rasuvaeff\Retry\Jitter\JitterMode;
 use Rasuvaeff\Retry\Jitter\NoJitter;
 use Rasuvaeff\Retry\Randomizer\RandomizerInterface;
 use Rasuvaeff\Retry\Randomizer\SystemRandomizer;
+use Rasuvaeff\Retry\Sleeper\ContextAwareSleeper;
 use Rasuvaeff\Retry\Sleeper\SleeperInterface;
 use Rasuvaeff\Retry\Sleeper\SystemSleeper;
 
@@ -325,6 +326,9 @@ final readonly class Retry
     {
         $history = [];
         $startedAt = $this->clock->now();
+        $sleeper = $this->context === null
+            ? $this->sleeper
+            : new ContextAwareSleeper(inner: $this->sleeper, context: $this->context);
 
         for ($attempt = 1; $attempt <= $this->maxAttempts; $attempt++) {
             try {
@@ -394,7 +398,7 @@ final readonly class Retry
                     $callback($record);
                 }
 
-                $this->sleepWithContext($delayMs);
+                $sleeper->sleepMs(ms: $delayMs);
             }
         }
 
@@ -437,24 +441,6 @@ final readonly class Retry
             attempt: $attempt,
             randomizer: $this->randomizer,
         );
-    }
-
-    private function sleepWithContext(int $delayMs): void
-    {
-        if ($this->context === null) {
-            $this->sleeper->sleepMs(ms: $delayMs);
-
-            return;
-        }
-
-        $remaining = $delayMs;
-        while ($remaining > 0) {
-            $this->context->assertActive();
-            $slice = min(50, $remaining, (int) ($this->context->remainingMs() ?? $remaining));
-            $this->sleeper->sleepMs(ms: max(1, $slice));
-            $remaining -= $slice;
-        }
-        $this->context->assertActive();
     }
 
     private function elapsedMs(\DateTimeImmutable $startedAt): int
