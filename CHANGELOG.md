@@ -3,6 +3,10 @@
 ## Unreleased
 
 - README requirements now match `composer.json` (`rasuvaeff/context` ^0.1, `psr/http-message` ^2.0); `README.ru.md` gains the missing cooperative-context section (#36).
+- `Http\RetryingHttpClient` accepts a `context:` (`rasuvaeff/context`): checked before every attempt and between 50 ms sleep slices, so cancellation or an expired deadline interrupts a long backoff or `Retry-After` wait; its `ContextException` is never retried and deliberately escapes PSR-18. A response already received is still returned (#31).
+- `onRetry`/`onExhausted` hooks are now best-effort in `Retry` and `RetryingHttpClient`: a throwing hook no longer aborts the loop or replaces the operation's exception. Hook exceptions go to the new `Retry::onHookError()` / `onHookError:` callbacks; a `ContextException` from a hook still propagates. **Behaviour change:** code that threw from a hook to stop retrying must use `stopIf()` / the retry predicates instead (#33).
+- `RetryingHttpClient` gains `retryAfterJitter:` — an opt-in `JitterInterface` that spreads a `Retry-After` delay upwards only (never earlier than the server asks), still capped by `maxRetryAfterMs` (#34).
+- `RetryingHttpClient` gains `idempotentOnly:` (default `false`): a request with a non-idempotent method passes through with a single call. New `RetryDecisions::isIdempotent()`. The README and `llms.txt` now warn that the defaults retry POST/PATCH (#35).
 
 ## 1.4.0 — 2026-10-10
 
