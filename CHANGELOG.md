@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.2 — 2026-10-15
+
+- Allow `rasuvaeff/context` ^0.3, so the package installs next to context 0.3. No code changes: nothing used here changed in 0.3 (all additions).
+
 ## 1.6.1 — 2026-10-11
 
 - Allow `rasuvaeff/context` ^0.2 (`^0.1 || ^0.2`), so the package installs next to `rasuvaeff/context-http` 0.2. No code changes: the package does not use `Context::onTerminate()`, the only API change in context 0.2.
