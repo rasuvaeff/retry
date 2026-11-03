@@ -68,10 +68,9 @@ final readonly class RetryAfterParser
 
         $now = $this->clock->now();
 
-        return max(
-            0,
-            ($target->getTimestamp() - $now->getTimestamp()) * 1000
-                + (int) (((int) $target->format('u') - (int) $now->format('u')) / 1000),
-        );
+        $delayMs = ($target->getTimestamp() - $now->getTimestamp()) * 1000
+            + (int) (((int) $target->format('u') - (int) $now->format('u')) / 1000);
+
+        return max(0, $delayMs);
     }
 }

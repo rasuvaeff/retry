@@ -28,8 +28,10 @@ final readonly class ElapsedTimer
     /**
      * @param null|\Closure(): int $nanoseconds Monotonic source; defaults to `hrtime(true)`.
      */
-    public static function start(ClockInterface $clock, ?\Closure $nanoseconds = null): self
-    {
+    public static function start(
+        ClockInterface $clock,
+        ?\Closure $nanoseconds = null,
+    ): self {
         if ($clock instanceof SystemClock) {
             $nanoseconds ??= static fn(): int => hrtime(as_number: true);
             $startedNs = $nanoseconds();

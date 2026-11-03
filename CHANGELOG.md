@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Mutation testing now counts code the tests execute but do not name in `#[Covers]`
+  (`composer mutation` runs Infection with `--with-uncovered`, plus the signature-default
+  ignore and the visibility mutators switched off as in the package template); overall
+  MSI 89% -> about 96.6% against `minMsi` 95. Added `FixedRandomizerTest`. Behaviour-neutral
+  source reformatting: the static factories, `with*()` methods and `jitter()` take one
+  parameter per line, and `RetryAfterParser` computes the delay in a local before
+  clamping it.
+
 ## 1.6.2 — 2026-10-15
 
 - Allow `rasuvaeff/context` ^0.3, so the package installs next to context 0.3. No code changes: nothing used here changed in 0.3 (all additions).

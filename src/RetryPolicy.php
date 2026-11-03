@@ -33,8 +33,11 @@ final readonly class RetryPolicy implements RetryPolicyInterface
         }
     }
 
-    public static function fixed(int $delayMs = 500, int $maxAttempts = 3, ?JitterInterface $jitter = null): self
-    {
+    public static function fixed(
+        int $delayMs = 500,
+        int $maxAttempts = 3,
+        ?JitterInterface $jitter = null,
+    ): self {
         return new self(
             maxAttempts: $maxAttempts,
             backoff: new FixedBackoff(delayMs: $delayMs),
@@ -60,8 +63,9 @@ final readonly class RetryPolicy implements RetryPolicyInterface
         );
     }
 
-    public static function immediate(int $maxAttempts = 3): self
-    {
+    public static function immediate(
+        int $maxAttempts = 3,
+    ): self {
         return new self(
             maxAttempts: $maxAttempts,
             backoff: new ImmediateBackoff(),
@@ -74,8 +78,11 @@ final readonly class RetryPolicy implements RetryPolicyInterface
     /**
      * Duration-typed counterpart of {@see self::fixed()}.
      */
-    public static function fixedFor(Duration $delay, int $maxAttempts = 3, ?JitterInterface $jitter = null): self
-    {
+    public static function fixedFor(
+        Duration $delay,
+        int $maxAttempts = 3,
+        ?JitterInterface $jitter = null,
+    ): self {
         return self::fixed(delayMs: $delay->toMillis(), maxAttempts: $maxAttempts, jitter: $jitter);
     }
 
