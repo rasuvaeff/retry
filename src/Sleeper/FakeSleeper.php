@@ -28,8 +28,10 @@ final class FakeSleeper implements SleeperInterface
      *
      * @param null|\Closure(int): void $onSleep
      */
-    public static function advancing(FakeClock $clock, ?\Closure $onSleep = null): self
-    {
+    public static function advancing(
+        FakeClock $clock,
+        ?\Closure $onSleep = null,
+    ): self {
         $sleeper = new self();
         $sleeper->clock = $clock;
         $sleeper->onSleep = $onSleep;

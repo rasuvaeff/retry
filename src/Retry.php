@@ -82,13 +82,19 @@ final readonly class Retry
         );
     }
 
-    public static function fixed(int $delayMs = 500, int $maxAttempts = 3): self
-    {
+    public static function fixed(
+        int $delayMs = 500,
+        int $maxAttempts = 3,
+    ): self {
         return self::new()->withFixed(delayMs: $delayMs, maxAttempts: $maxAttempts);
     }
 
-    public static function exponential(int $maxAttempts = 3, int $baseMs = 100, float $multiplier = 2.0, int $capMs = 30_000): self
-    {
+    public static function exponential(
+        int $maxAttempts = 3,
+        int $baseMs = 100,
+        float $multiplier = 2.0,
+        int $capMs = 30_000,
+    ): self {
         return self::new()->withExponential(
             baseMs: $baseMs,
             multiplier: $multiplier,
@@ -97,24 +103,31 @@ final readonly class Retry
         );
     }
 
-    public static function immediate(int $maxAttempts = 3): self
-    {
+    public static function immediate(
+        int $maxAttempts = 3,
+    ): self {
         return self::new()->withImmediate(maxAttempts: $maxAttempts);
     }
 
     /**
      * Duration-typed counterpart of {@see self::fixed()}.
      */
-    public static function fixedFor(Duration $delay, int $maxAttempts = 3): self
-    {
+    public static function fixedFor(
+        Duration $delay,
+        int $maxAttempts = 3,
+    ): self {
         return self::new()->withFixedFor(delay: $delay, maxAttempts: $maxAttempts);
     }
 
     /**
      * Duration-typed counterpart of {@see self::exponential()}.
      */
-    public static function exponentialFor(Duration $base, Duration $cap, float $multiplier = 2.0, int $maxAttempts = 3): self
-    {
+    public static function exponentialFor(
+        Duration $base,
+        Duration $cap,
+        float $multiplier = 2.0,
+        int $maxAttempts = 3,
+    ): self {
         return self::new()->withExponentialFor(
             base: $base,
             cap: $cap,
@@ -145,24 +158,31 @@ final readonly class Retry
         return $this->stopAfterMs(budgetMs: $budget->toMillis());
     }
 
-    public function withFixed(int $delayMs = 500, ?int $maxAttempts = null): self
-    {
+    public function withFixed(
+        int $delayMs = 500,
+        ?int $maxAttempts = null,
+    ): self {
         return $this->copy(
             maxAttempts: $maxAttempts,
             backoff: new FixedBackoff(delayMs: $delayMs),
         );
     }
 
-    public function withExponential(int $baseMs = 100, float $multiplier = 2.0, int $capMs = 30_000, ?int $maxAttempts = null): self
-    {
+    public function withExponential(
+        int $baseMs = 100,
+        float $multiplier = 2.0,
+        int $capMs = 30_000,
+        ?int $maxAttempts = null,
+    ): self {
         return $this->copy(
             maxAttempts: $maxAttempts,
             backoff: new ExponentialBackoff(baseMs: $baseMs, multiplier: $multiplier, capMs: $capMs),
         );
     }
 
-    public function withImmediate(?int $maxAttempts = null): self
-    {
+    public function withImmediate(
+        ?int $maxAttempts = null,
+    ): self {
         return $this->copy(
             maxAttempts: $maxAttempts,
             backoff: new ImmediateBackoff(),
@@ -172,16 +192,22 @@ final readonly class Retry
     /**
      * Duration-typed counterpart of {@see self::withFixed()}.
      */
-    public function withFixedFor(Duration $delay, ?int $maxAttempts = null): self
-    {
+    public function withFixedFor(
+        Duration $delay,
+        ?int $maxAttempts = null,
+    ): self {
         return $this->withFixed(delayMs: $delay->toMillis(), maxAttempts: $maxAttempts);
     }
 
     /**
      * Duration-typed counterpart of {@see self::withExponential()}.
      */
-    public function withExponentialFor(Duration $base, Duration $cap, float $multiplier = 2.0, ?int $maxAttempts = null): self
-    {
+    public function withExponentialFor(
+        Duration $base,
+        Duration $cap,
+        float $multiplier = 2.0,
+        ?int $maxAttempts = null,
+    ): self {
         return $this->withExponential(
             baseMs: $base->toMillis(),
             multiplier: $multiplier,
@@ -194,8 +220,10 @@ final readonly class Retry
      * Additive jitter uses @param $factor in [0, 1]; the factor is ignored for
      * `JitterMode::Full` and `JitterMode::None`.
      */
-    public function jitter(float $factor = 0.2, JitterMode $mode = JitterMode::Additive): self
-    {
+    public function jitter(
+        float $factor = 0.2,
+        JitterMode $mode = JitterMode::Additive,
+    ): self {
         $jitter = match ($mode) {
             JitterMode::Additive => new AdditiveJitter(factor: $factor),
             JitterMode::Full => new FullJitter(),
