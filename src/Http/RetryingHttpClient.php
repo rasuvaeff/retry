@@ -9,11 +9,13 @@ use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Log\LoggerInterface;
 use Rasuvaeff\Context\Context;
 use Rasuvaeff\Context\ContextException;
 use Rasuvaeff\Retry\Clock\ElapsedTimer;
 use Rasuvaeff\Retry\Clock\SystemClock;
 use Rasuvaeff\Retry\Jitter\JitterInterface;
+use Rasuvaeff\Retry\Log\RetryLog;
 use Rasuvaeff\Retry\RetryPolicyInterface;
 use Rasuvaeff\Retry\Sleeper\ContextAwareSleeper;
 
@@ -43,6 +45,7 @@ final readonly class RetryingHttpClient implements ClientInterface
      * @param bool                                                                 $idempotentOnly   When true, requests with a non-idempotent method ({@see RetryDecisions::isIdempotent()}) pass through with a single call: no retry, no hooks, no exhaustion.
      * @param null|JitterInterface                                                 $retryAfterJitter Spreads a `Retry-After` delay upwards only, never below the server's value; the `maxRetryAfterMs` cap still applies.
      * @param list<\Closure(\Throwable): void>                                     $onHookError      Receives exceptions thrown by `onRetry`/`onExhausted` hooks, which no longer abort the loop.
+     * @param null|LoggerInterface                                                 $logger           Optional PSR-3 logger: `warning` before every retry sleep (attempt, delay, exception or response status), `error` on exhaustion.
      */
     public function __construct(
         private ClientInterface $inner,
@@ -60,6 +63,7 @@ final readonly class RetryingHttpClient implements ClientInterface
         private bool $idempotentOnly = false,
         private ?JitterInterface $retryAfterJitter = null,
         private array $onHookError = [],
+        private ?LoggerInterface $logger = null,
     ) {
         $this->retryOnResponse = $retryOnResponse ?? RetryDecisions::transient();
         $this->responsePredicateTakesAttempt = $this->takesAttempt(predicate: $this->retryOnResponse);
@@ -117,6 +121,7 @@ final readonly class RetryingHttpClient implements ClientInterface
             : $this->policy->sleeper();
         $parser = $this->respectRetryAfter ? new RetryAfterParser(clock: $this->clock) : null;
         $timer = ElapsedTimer::start(clock: $this->clock);
+        $log = new RetryLog(logger: $this->logger);
         /** @var list<HttpAttemptRecord> $history */
         $history = [];
 
@@ -162,6 +167,15 @@ final readonly class RetryingHttpClient implements ClientInterface
                         exception: null,
                     );
                     $exhausted = new HttpRetryExhausted(attempts: $attempt, history: $history);
+                    $log->exhausted(
+                        attempts: $attempt,
+                        reason: !$isLastAttempt && $this->budgetExceeded(elapsedMs: $elapsedMs, delayMs: $delayMs)
+                            ? 'TimeBudget'
+                            : 'MaxAttempts',
+                        exception: null,
+                        scope: 'request',
+                        status: $response->getStatusCode(),
+                    );
                     $this->callExhausted(exhausted: $exhausted);
 
                     if ($this->throwOnExhausted) {
@@ -179,6 +193,14 @@ final readonly class RetryingHttpClient implements ClientInterface
                     exception: null,
                 );
                 $history[] = $record;
+                $log->retry(
+                    attempt: $attempt,
+                    delayMs: $delayMs,
+                    elapsedMs: $elapsedMs,
+                    exception: null,
+                    scope: 'request',
+                    status: $response->getStatusCode(),
+                );
                 $this->callOnRetry(record: $record);
                 $sleeper->sleepMs(ms: $delayMs);
             } catch (ClientExceptionInterface $exception) {
@@ -206,6 +228,14 @@ final readonly class RetryingHttpClient implements ClientInterface
                         exception: $exception,
                     );
                     $exhausted = new HttpRetryExhausted(attempts: $attempt, history: $history, previous: $exception);
+                    $log->exhausted(
+                        attempts: $attempt,
+                        reason: !$isLastAttempt && $this->budgetExceeded(elapsedMs: $elapsedMs, delayMs: $delayMs)
+                            ? 'TimeBudget'
+                            : 'MaxAttempts',
+                        exception: $exception,
+                        scope: 'request',
+                    );
                     $this->callExhausted(exhausted: $exhausted);
 
                     if ($this->throwOnExhausted) {
@@ -223,6 +253,13 @@ final readonly class RetryingHttpClient implements ClientInterface
                     exception: $exception,
                 );
                 $history[] = $record;
+                $log->retry(
+                    attempt: $attempt,
+                    delayMs: $delayMs,
+                    elapsedMs: $elapsedMs,
+                    exception: $exception,
+                    scope: 'request',
+                );
                 $this->callOnRetry(record: $record);
                 $sleeper->sleepMs(ms: $delayMs);
             }

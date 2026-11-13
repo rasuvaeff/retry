@@ -22,6 +22,7 @@ a PSR-18 HTTP client decorator that honors `Retry-After`.
 - `psr/clock` ^1.0
 - `psr/http-client` ^1.0
 - `psr/http-message` ^2.0
+- `psr/log` ^1.0 || ^2.0 || ^3.0
 - `rasuvaeff/duration` ^1.0
 - `rasuvaeff/context` ^0.1
 
@@ -164,6 +165,25 @@ Retry::new()
     ->onRetry(fn(AttemptRecord $record): never => throw new \RuntimeException('metrics down'))
     ->onHookError(fn(\Throwable $hookError): null => null)
     ->run(fn(): string => flakyOperation());
+```
+
+### PSR-3 logging
+
+`withLogger()` attaches an optional PSR-3 logger. Logging is purely additive to
+the hooks: a `warning` is emitted before every retry sleep (context: `attempt`,
+`delay_ms`, `elapsed_ms`, `exception`) and an `error` when attempts or budget
+are exhausted (context: `attempts`, `reason`, `exception`). Logging controls log
+output only: the `onRetry`/`onExhausted` hooks fire independently of whether a
+logger is configured. With no logger (the default) nothing is logged. A logger
+that throws cannot break the loop — logging is best-effort. `withLogger(null)`
+removes a previously configured logger.
+
+```php
+Retry::exponential()
+    ->withLogger($logger)
+    ->run(fn(): string => flakyOperation());
+// $logger->warning('operation failed on attempt {attempt}, retrying in {delay_ms} ms', [...])
+// $logger->error('operation retries exhausted after {attempts} attempts ({reason})', [...])
 ```
 
 ### Cooperative context
@@ -313,6 +333,7 @@ Constructor arguments beyond `inner` / `policy`:
 | `idempotentOnly` | `false` | When `true`, a request with a non-idempotent method passes through with a single call: no retry, no hooks, no exhaustion. |
 | `retryAfterJitter` | `null` | `Jitter\JitterInterface` spreading a `Retry-After` delay **upwards** only; the cap still applies. |
 | `onHookError` | `[]` | Callbacks `fn(\Throwable): void` receiving exceptions thrown by `onRetry`/`onExhausted`, which no longer abort the loop. |
+| `logger` | `null` | PSR-3 logger: `warning` before every retry sleep (attempt, delay, exception), `error` on exhaustion (`attempts`, `reason`, `exception`); the scope is `request`. |
 
 A single attempt budget covers both retryable responses and PSR-18 transport
 exceptions, so the inner client is called at most `maxAttempts` times. When a

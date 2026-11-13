@@ -8,9 +8,9 @@
         "summary": "build/infection-summary.log"
     },
     "testFramework": "testo",
-    // ~96.6% overall with --with-uncovered (405 of 419 counted mutants killed, 5 of
+    // ~96.6% overall with --with-uncovered (483 of 500 counted mutants killed, 5 of
     // them by timeout), which is the honest ceiling: every killable mutant is
-    // killed. The 12 Escaped are genuine equivalents — psalm-required explicit
+    // killed. The 15 Escaped are genuine equivalents — psalm-required explicit
     // (float) casts in backoff/jitter, and (int) casts on the sub-millisecond
     // correction term of the elapsed-ms math and of RetryAfterParser (the only
     // deterministic test clock advances in whole milliseconds, so the microsecond
@@ -19,7 +19,13 @@
     // (IncrementInteger/DecrementInteger, Sleeper/SystemSleeper.php:19) — a 0.1%
     // perturbation of the requested wait, below any timing tolerance that stays
     // non-flaky against OS scheduler jitter; killing them would need a src/ seam
-    // (an injectable sleep function). The 2 Not Covered are the `throw new
+    // (an injectable sleep function). Also equivalent: SystemRandomizer::float()'s
+    // `return $min` when min === max (Randomizer/SystemRandomizer.php:30) — the
+    // fall-through getFloat(min, min, ClosedClosed) returns exactly min; and the
+    // two NullSafeMethodCall mutants on RetryLog's `$this->logger?->warning/error`
+    // (Log/RetryLog.php) — the best-effort catch (\Throwable) that guards a broken
+    // logger also swallows the Error the mutant produces on a null logger, so the
+    // behavior is identical by construction. The 2 Not Covered are the `throw new
     // \LogicException('Unreachable ...')` after the retry loops in Retry and
     // RetryingHttpClient: no input reaches them. Signature defaults are handled by
     // the template's ignore regex, which is why the static factories and with*()

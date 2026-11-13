@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Retry;
 
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 use Rasuvaeff\Context\Context;
 use Rasuvaeff\Context\ContextException;
 use Rasuvaeff\Duration\Duration;
@@ -19,6 +20,7 @@ use Rasuvaeff\Retry\Jitter\FullJitter;
 use Rasuvaeff\Retry\Jitter\JitterInterface;
 use Rasuvaeff\Retry\Jitter\JitterMode;
 use Rasuvaeff\Retry\Jitter\NoJitter;
+use Rasuvaeff\Retry\Log\RetryLog;
 use Rasuvaeff\Retry\Randomizer\RandomizerInterface;
 use Rasuvaeff\Retry\Randomizer\SystemRandomizer;
 use Rasuvaeff\Retry\Sleeper\ContextAwareSleeper;
@@ -55,6 +57,7 @@ final readonly class Retry
         private array $onRetry,
         private array $onExhausted,
         private array $onHookError,
+        private ?LoggerInterface $logger = null,
     ) {
         if ($maxAttempts < 1) {
             throw new \InvalidArgumentException('Max attempts must be greater than or equal to 1');
@@ -79,6 +82,7 @@ final readonly class Retry
             onRetry: [],
             onExhausted: [],
             onHookError: [],
+            logger: null,
         );
     }
 
@@ -305,6 +309,16 @@ final readonly class Retry
         return $this->copy(onHookError: [...$this->onHookError, $callback]);
     }
 
+    /**
+     * Optional PSR-3 logger: a `warning` is emitted before every retry sleep
+     * (attempt number, delay, exception) and an `error` when attempts or budget
+     * are exhausted. Purely additive to the `onRetry`/`onExhausted` hooks.
+     */
+    public function withLogger(?LoggerInterface $logger): self
+    {
+        return $this->copy(logger: $logger);
+    }
+
     public function withSleeper(SleeperInterface $sleeper): self
     {
         return $this->copy(sleeper: $sleeper);
@@ -373,6 +387,7 @@ final readonly class Retry
     {
         $history = [];
         $timer = ElapsedTimer::start(clock: $this->clock);
+        $log = new RetryLog(logger: $this->logger);
         $sleeper = $this->context instanceof Context
             ? new ContextAwareSleeper(inner: $this->sleeper, context: $this->context)
             : $this->sleeper;
@@ -441,6 +456,12 @@ final readonly class Retry
                     exception: $exception,
                 );
                 $history[] = $record;
+                $log->retry(
+                    attempt: $attempt,
+                    delayMs: $delayMs,
+                    elapsedMs: $elapsedMs,
+                    exception: $exception,
+                );
                 foreach ($this->onRetry as $callback) {
                     $this->callHook(hook: $callback, argument: $record);
                 }
@@ -501,6 +522,11 @@ final readonly class Retry
             history: $history,
             reason: $reason,
         );
+        (new RetryLog(logger: $this->logger))->exhausted(
+            attempts: $attempts,
+            reason: $reason->name,
+            exception: $lastException,
+        );
         foreach ($this->onExhausted as $callback) {
             $this->callHook(hook: $callback, argument: $exception);
         }
@@ -552,6 +578,7 @@ final readonly class Retry
         ?array $onRetry = null,
         ?array $onExhausted = null,
         ?array $onHookError = null,
+        LoggerInterface|false|null $logger = false,
     ): self {
         return new self(
             maxAttempts: $maxAttempts ?? $this->maxAttempts,
@@ -569,6 +596,10 @@ final readonly class Retry
             onRetry: $onRetry ?? $this->onRetry,
             onExhausted: $onExhausted ?? $this->onExhausted,
             onHookError: $onHookError ?? $this->onHookError,
+            // `false` (the sentinel) keeps the current logger; an explicit null
+            // from withLogger() clears it — unlike closures, null here means
+            // "log nowhere", not "not configured".
+            logger: $logger === false ? $this->logger : $logger,
         );
     }
 }
