@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace Rasuvaeff\Retry\Tests;
 
 use Rasuvaeff\Retry\ExhaustionReason;
+use Rasuvaeff\Retry\Log\RetryLog;
 use Rasuvaeff\Retry\Retry;
 use Rasuvaeff\Retry\RetryExhausted;
 use Rasuvaeff\Retry\Sleeper\FakeSleeper;
 use Rasuvaeff\Retry\Tests\Support\SpyLogger;
+use Rasuvaeff\Retry\Tests\Support\ThrowingLogger;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
 
 #[Test]
 #[Covers(Retry::class)]
+#[Covers(RetryLog::class)]
 final class RetryLoggingTest
 {
     public function logsWarningForEachRetryAndErrorOnExhaustion(): void
@@ -86,19 +89,43 @@ final class RetryLoggingTest
         throw new \RuntimeException(message: 'Expected RetryExhausted');
     }
 
-    public function logsNothingWithoutALogger(): void
+    public function clearingTheLoggerWithNullStopsLogging(): void
     {
-        $logger = new SpyLogger();
+        $configured = new SpyLogger();
 
         try {
             Retry::fixed(delayMs: 10, maxAttempts: 2)
                 ->withSleeper(sleeper: new FakeSleeper())
+                ->withLogger(logger: $configured)
                 ->withLogger(logger: null)
                 ->run(operation: static function (): never {
                     throw new \RuntimeException(message: 'down');
                 });
         } catch (RetryExhausted) {
-            Assert::same($logger->records, []);
+            Assert::same($configured->records, []);
+
+            return;
+        }
+
+        throw new \RuntimeException(message: 'Expected RetryExhausted');
+    }
+
+    public function throwingLoggerDoesNotBreakTheRetryLoop(): void
+    {
+        $throwing = new ThrowingLogger();
+
+        try {
+            Retry::fixed(delayMs: 10, maxAttempts: 2)
+                ->withSleeper(sleeper: new FakeSleeper())
+                ->withLogger(logger: $throwing)
+                ->run(operation: static function (): never {
+                    throw new \RuntimeException(message: 'down');
+                });
+        } catch (RetryExhausted $exception) {
+            // One throwing warning (retry) + one throwing error (exhausted):
+            // both swallowed, the exhaustion outcome still delivered.
+            Assert::same($exception->reason, ExhaustionReason::MaxAttempts);
+            Assert::same($throwing->calls, 2);
 
             return;
         }
@@ -117,5 +144,31 @@ final class RetryLoggingTest
 
         Assert::same($value, 'ok');
         Assert::same($logger->records, []);
+    }
+
+    public function withLoggerReplacesThePreviouslyConfiguredLogger(): void
+    {
+        $first = new SpyLogger();
+        $second = new SpyLogger();
+
+        try {
+            Retry::fixed(delayMs: 10, maxAttempts: 2)
+                ->withSleeper(sleeper: new FakeSleeper())
+                ->withLogger(logger: $first)
+                ->withLogger(logger: $second)
+                ->run(operation: static function (): never {
+                    throw new \RuntimeException(message: 'down');
+                });
+        } catch (RetryExhausted) {
+            Assert::same($first->records, []);
+            Assert::same(
+                array_map(static fn(array $record): string => $record['level'], $second->records),
+                ['warning', 'error'],
+            );
+
+            return;
+        }
+
+        throw new \RuntimeException(message: 'Expected RetryExhausted');
     }
 }

@@ -172,8 +172,11 @@ Retry::new()
 `withLogger()` attaches an optional PSR-3 logger. Logging is purely additive to
 the hooks: a `warning` is emitted before every retry sleep (context: `attempt`,
 `delay_ms`, `elapsed_ms`, `exception`) and an `error` when attempts or budget
-are exhausted (context: `attempts`, `reason`, `exception`). With no logger (the
-default) nothing is logged and no hooks fire.
+are exhausted (context: `attempts`, `reason`, `exception`). Logging controls log
+output only: the `onRetry`/`onExhausted` hooks fire independently of whether a
+logger is configured. With no logger (the default) nothing is logged. A logger
+that throws cannot break the loop — logging is best-effort. `withLogger(null)`
+removes a previously configured logger.
 
 ```php
 Retry::exponential()

@@ -174,6 +174,7 @@ final readonly class RetryingHttpClient implements ClientInterface
                             : 'MaxAttempts',
                         exception: null,
                         scope: 'request',
+                        status: $response->getStatusCode(),
                     );
                     $this->callExhausted(exhausted: $exhausted);
 
@@ -198,6 +199,7 @@ final readonly class RetryingHttpClient implements ClientInterface
                     elapsedMs: $elapsedMs,
                     exception: null,
                     scope: 'request',
+                    status: $response->getStatusCode(),
                 );
                 $this->callOnRetry(record: $record);
                 $sleeper->sleepMs(ms: $delayMs);

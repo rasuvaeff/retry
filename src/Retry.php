@@ -578,7 +578,7 @@ final readonly class Retry
         ?array $onRetry = null,
         ?array $onExhausted = null,
         ?array $onHookError = null,
-        ?LoggerInterface $logger = null,
+        LoggerInterface|false|null $logger = false,
     ): self {
         return new self(
             maxAttempts: $maxAttempts ?? $this->maxAttempts,
@@ -596,7 +596,10 @@ final readonly class Retry
             onRetry: $onRetry ?? $this->onRetry,
             onExhausted: $onExhausted ?? $this->onExhausted,
             onHookError: $onHookError ?? $this->onHookError,
-            logger: $logger ?? $this->logger,
+            // `false` (the sentinel) keeps the current logger; an explicit null
+            // from withLogger() clears it — unlike closures, null here means
+            // "log nowhere", not "not configured".
+            logger: $logger === false ? $this->logger : $logger,
         );
     }
 }
