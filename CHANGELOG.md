@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Optional PSR-3 logger (#46): `Retry::withLogger()` and `RetryingHttpClient`'s new `logger:` constructor argument (both `null` by default) emit a `warning` before every retry sleep (context: `attempt`, `delay_ms`, `elapsed_ms`, `exception`) and an `error` when attempts or budget are exhausted (context: `attempts`, `reason` — `MaxAttempts`/`TimeBudget`, `exception`). Purely additive to the `onRetry`/`onExhausted` hooks; `psr/log` added to `require` (interface-only).
+
 - Mutation testing now counts code the tests execute but do not name in `#[Covers]`
   (`composer mutation` runs Infection with `--with-uncovered`, plus the signature-default
   ignore and the visibility mutators switched off as in the package template); overall

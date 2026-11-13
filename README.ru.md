@@ -26,6 +26,7 @@ clock/sleeper/randomizer, хуками наблюдаемости и декор�
 - `psr/clock` ^1.0
 - `psr/http-client` ^1.0
 - `psr/http-message` ^2.0
+- `psr/log` ^1.0 || ^2.0 || ^3.0
 - `rasuvaeff/duration` ^1.0
 - `rasuvaeff/context` ^0.1
 
@@ -169,6 +170,22 @@ Retry::new()
     ->onRetry(fn(AttemptRecord $record): never => throw new \RuntimeException('metrics down'))
     ->onHookError(fn(\Throwable $hookError): null => null)
     ->run(fn(): string => flakyOperation());
+```
+
+### Логирование PSR-3
+
+`withLogger()` подключает опциональный PSR-3 логгер. Логирование чисто
+аддитивно к хукам: `warning` пишется перед сном каждой повторной попытки
+(контекст: `attempt`, `delay_ms`, `elapsed_ms`, `exception`), а `error` — при
+исчерпании попыток или бюджета (контекст: `attempts`, `reason`, `exception`).
+Без логгера (по умолчанию) ничего не логируется и хуки не затрагиваются.
+
+```php
+Retry::exponential()
+    ->withLogger($logger)
+    ->run(fn(): string => flakyOperation());
+// $logger->warning('operation failed on attempt {attempt}, retrying in {delay_ms} ms', [...])
+// $logger->error('operation retries exhausted after {attempts} attempts ({reason})', [...])
 ```
 
 ### Кооперативный контекст
@@ -317,6 +334,7 @@ sleeper и randomizer. Предикаты исключений и результ
 | `idempotentOnly` | `false` | При `true` запрос с неидемпотентным методом проходит насквозь одним вызовом: без повторов, хуков и исчерпания. |
 | `retryAfterJitter` | `null` | `Jitter\JitterInterface`, размазывающий задержку из `Retry-After` только **вверх**; ограничение `maxRetryAfterMs` сохраняется. |
 | `onHookError` | `[]` | Колбэки `fn(\Throwable): void`, получающие исключения из `onRetry`/`onExhausted`; такие исключения больше не прерывают цикл. |
+| `logger` | `null` | PSR-3 логгер: `warning` перед сном каждой повторной попытки (попытка, задержка, исключение), `error` при исчерпании (`attempts`, `reason`, `exception`); scope — `request`. |
 
 Бюджет попыток один и покрывает как повторяемые ответы, так и транспортные
 исключения PSR-18, поэтому внутренний клиент вызывается не более `maxAttempts` раз.

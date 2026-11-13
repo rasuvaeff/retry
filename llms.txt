@@ -54,6 +54,11 @@ composer require rasuvaeff/retry
   exception; the hook's exception goes to `onHookError` callbacks (dropped when
   none). A `ContextException` from a hook propagates. `onHookError` itself is
   not guarded.
+- `Retry::withLogger(?LoggerInterface)` attaches an optional PSR-3 logger:
+  `warning` before every retry sleep (`attempt`, `delay_ms`, `elapsed_ms`,
+  `exception`), `error` on exhaustion (`attempts`, `reason`, `exception`).
+  Additive to the hooks; `null` (default) logs nothing. `RetryingHttpClient`
+  takes the same via its `logger:` constructor argument (scope `request`).
 - `jitter(float $factor, JitterMode $mode)` takes a `Jitter\JitterMode` enum
   (`Additive`/`Full`/`None`), not a string; `factor` applies only to `Additive`.
   `Additive` is equal jitter (spreads downward only), so `capMs` stays a hard
@@ -166,6 +171,7 @@ $client = new RetryingHttpClient(
     idempotentOnly: true,       // POST/PATCH pass through with a single call
     retryAfterJitter: null,     // JitterInterface; spreads Retry-After upwards only
     onHookError: [fn(\Throwable $e): null => null], // exceptions thrown by onRetry/onExhausted
+    logger: null,              // ?Psr\Log\LoggerInterface; warning per retry, error on exhaustion
     // clock defaults to Clock\SystemClock; pass Clock\FakeClock in tests
 );
 ```
