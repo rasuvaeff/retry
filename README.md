@@ -24,7 +24,7 @@ a PSR-18 HTTP client decorator that honors `Retry-After`.
 - `psr/http-message` ^2.0
 - `psr/log` ^1.0 || ^2.0 || ^3.0
 - `rasuvaeff/duration` ^1.0
-- `rasuvaeff/context` ^0.1
+- `rasuvaeff/context` ^0.1 to ^0.5
 
 ## Installation
 
