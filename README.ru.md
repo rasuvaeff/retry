@@ -28,7 +28,7 @@ clock/sleeper/randomizer, хуками наблюдаемости и декор�
 - `psr/http-message` ^2.0
 - `psr/log` ^1.0 || ^2.0 || ^3.0
 - `rasuvaeff/duration` ^1.0
-- `rasuvaeff/context` ^0.1
+- `rasuvaeff/context` ^0.1 – ^0.5
 
 ## Установка
 
