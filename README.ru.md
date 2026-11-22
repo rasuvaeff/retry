@@ -22,7 +22,7 @@ clock/sleeper/randomizer, хуками наблюдаемости и декор�
 
 ## Требования
 
-- PHP 8.3+
+- PHP 8.3 – 8.6
 - `psr/clock` ^1.0
 - `psr/http-client` ^1.0
 - `psr/http-message` ^2.0
