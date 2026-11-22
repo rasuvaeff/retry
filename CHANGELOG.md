@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Changed:** PHP 8.6 is supported: the `php` constraint is widened to
+  `8.3 - 8.6` (#50). CI runs PHP 8.6 as a regular matrix entry; the
+  backward-compatibility job runs on PHP 8.5.
+
 ## 1.7.1 — 2026-11-21
 
 - Allow `rasuvaeff/context` ^0.4 and ^0.5.
