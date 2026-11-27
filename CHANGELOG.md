@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.3 — 2026-11-27
+
+- Docs: the agent skill and `llms.txt` say `retryIf()` widens the retried set (a true predicate retries even an `\Error`) and `stopIf()` vetoes first; "layer on top" read as narrowing.
+
 ## 1.7.2 — 2026-11-22
 
 - **Changed:** PHP 8.6 is supported: the `php` constraint is widened to

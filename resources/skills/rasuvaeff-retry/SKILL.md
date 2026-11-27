@@ -33,7 +33,9 @@ PSR-18 decorator. Namespace `Rasuvaeff\Retry\`.
 
 3. **Know what is retried.** The default retries any `\Exception`; `\Error` is
    NOT retried. `retryOn()` REPLACES the class list (narrow it deliberately);
-   `retryIf()`/`stopIf()` layer extra predicates on top. Non-retryable
+   `retryIf()` predicates WIDEN it (a true predicate retries
+   even an `\Error` outside `retryOn`); `stopIf()` is checked first and vetoes
+   both. Non-retryable
    exceptions are rethrown as-is; only exhaustion wraps into `RetryExhausted`.
 
 4. **No real sleeps or wall-clock in tests.** Inject `FakeSleeper`, `FakeClock`
