@@ -20,7 +20,8 @@ composer require rasuvaeff/retry
   out of attempts or budget are wrapped.
 - Default retry triggers on any `\Exception`. `\Error` is NOT retried; opt in
   with `retryOn(\Error::class)`. `retryOn()` REPLACES the class list (lets you
-  narrow the default); `retryIf()`/`stopIf()` layer extra predicates.
+  narrow the default); `retryIf()` widens it (a true predicate retries even an `\Error`
+  outside `retryOn`); `stopIf()` is checked first and vetoes both.
 - `retryIfResult(fn(mixed): bool)` retries when the operation returns an
   unacceptable value (no throw needed). On exhaustion `RetryExhausted::lastException`
   is an `UnacceptableResult` whose `$result` holds the rejected value.
